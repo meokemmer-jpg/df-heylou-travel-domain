@@ -1,0 +1,171 @@
+# DF-HeyLou-Travel-Domain Configuration [CRUX-MK]
+#
+# 11. Foundation-DF: HeyLou-Travel-Domain mit Skeleton-Key-Adapter + 5-LLM-Sub-Funktion-Pattern.
+# Welle-35 Architekt-autonom built per Martin-Direktive 2026-05-11.
+# EIGENSTAENDIG: kein Cross-DF-Coupling zu Mac-Foundation-DFs notwendig.
+
+df_id: df-heylou-travel-domain
+df_name: HeyLou-Travel-Domain
+version: 0.1.0-SKELETON
+domain: travel-hospitality
+welle_introduced: welle-35
+type: foundation-df
+crux-mk: true
+
+# === LLM Provider (Welle-35: 6 Provider, Sub-Funktion-Pattern) ===
+llm_providers:
+  - ollama-local         # Primary: lokal, Internet-unabhaengig
+  - gemini               # Long-Context Travel-Itineraries (Ultra Sunk-Cost)
+  - openai               # Reasoning, Booking-Logic (ChatGPT Pro Sunk-Cost)
+  - grok                 # Real-time Travel-Disruption (Heavy Sunk-Cost)
+  - mistral              # EU-DSGVO-konform (CONDITIONAL, API-Key fehlt)
+  - deepseek             # Cost-effective Routine (CONDITIONAL, API-Key fehlt)
+
+# === K11-K16 DF-Akzeptanz-Kriterien (rules/df-akzeptanz-kriterien.md) ===
+k11_cascade_isolation: hard          # per-Adapter try/except, eigenes Audit-Log
+failure_blast_radius: 1              # max 1 anderer Adapter betroffen
+dependency_dlq_strategy: per-adapter-jsonl
+
+k12_distillation_resistance:
+  output_feeds_into_training: false  # Travel-Outputs nicht in LLM-Training
+  provenance_required_in_output: true
+  non_llm_validation_layer: true     # deterministische Knowledge-Graph-Logic
+
+k13_pre_action_verification:
+  enabled: true
+  external_anchor_type: drive_filesystem
+  external_anchor_validation_frequency: daily
+  pre_action_domain_check: true      # env_tag (dev/staging/prod) Pflicht
+  pre_action_backup_check: true
+  pre_action_blast_radius_check: true
+  k0_q0_filter_enabled: true         # forbidden_patterns: real-payment/real-booking/etc
+
+k14_human_override:
+  override_complexity: single_command
+  martin_review_cadence: weekly
+  bus_factor_handover_drilled: false  # Welle-36-Pflicht
+  hardened_promotion_requires_phronesis_ticket: true  # DF_HEYLOU_PHRONESIS_TICKET env-var
+
+k15_entropy_budget:
+  entropy_added_loc_estimate: 1500
+  entropy_added_concepts:
+    - TravelKnowledgeGraph
+    - Hotel
+    - Route
+    - Rate
+    - GuestPreference
+    - TravelSoftwareAdapter
+    - SkeletonKeyAdapter
+    - LLMSubfunctionRouter
+    - HeyLouTravelDomainOrchestrator
+  entropy_justified_by_rho: 75000  # EUR/J Schaetzung Travel-Domain-Knowledge-Beschleunigung
+  entropy_subtractive_potential: 0  # NEU, keine Existing-Komplexitaet ersetzt
+
+k16_concurrent_spawn_protection: both
+lock_dir: /tmp/df-heylou-travel-domain.lock
+lock_stale_age_h: 6
+engine_pgrep_check: true
+lock_release_on: EXIT_INT_TERM
+
+# === LC1-LC5 Lose-Coupling (rules/df-lose-coupling.md) ===
+lose_coupling:
+  LC1_graceful_degradation:
+    degradation_modes:
+      - full                       # alle 6 LLMs + 4 Adapter verfuegbar
+      - degraded_no_real_llm       # DF_HEYLOU_REAL_LLM_ENABLED=false -> nur Mock-LLM
+      - degraded_no_adapter        # DF_HEYLOU_REAL_ADAPTER_ENABLED=false -> nur Mock-Adapter
+      - standalone                 # nur Knowledge-Graph + lokale Mocks (Internet-Outage)
+    degradation_test_required: true
+
+  LC2_direct_mode:
+    direct_mode_available: true
+    direct_mode_capability: 0.6  # ~60% via Mock-Mode (Knowledge-Graph + Mock-Adapter)
+    direct_mode_trigger: "DF_HEYLOU_REAL_LLM_ENABLED!=true OR all-llm-unreachable"
+
+  LC3_circuit_breaker:
+    circuit_breaker_timeout_s: 30
+    circuit_breaker_open_threshold: 3
+    circuit_breaker_half_open_test_interval_s: 300
+
+  LC4_failure_isolation:
+    state_externalization: true       # JSONL audit-log per adapter+provider
+    idempotent_operations: true       # query_hash + booking_id deduplication
+    dependency_dlq_separate: true     # eigene JSONL pro adapter
+
+  LC5_health_check:
+    health_check_dependencies: []     # eigene Funktion = Knowledge-Graph-Lookup
+    health_check_degraded_score: 0.7
+    health_check_endpoint_or_file: branch-hub/state/df-heylou-travel-domain-health.json
+
+# === Audit Trail ===
+audit_dir: audit/
+audit_logs:
+  - heylou-domain.jsonl
+  - llm-router.jsonl
+  - adapter-calls.jsonl
+loop_reports_dir: runs/loop-reports/
+
+# === ENV-Var-Gated Real-Integration (rules/env-var-gated-real-integration-default.md) ===
+env_vars:
+  DF_HEYLOU_REAL_LLM_ENABLED: false        # Default mock; real CLI calls when "true"
+  DF_HEYLOU_REAL_ADAPTER_ENABLED: false    # Default mock adapters
+  DF_HEYLOU_PHRONESIS_TICKET: ""           # Required for HARDENED-tier promotion + real adapters
+  DF_HEYLOU_TENANT_ID: hildesheim
+  DF_HEYLOU_REAL_LLM_TIMEOUT_S: 30
+  DF_HEYLOU_HMAC_SECRET: ""                # HMAC-SHA256 secret (W30-G); falls leer: default
+
+# === Travel-Knowledge-Graph (Sandbox-Default-Daten) ===
+sandbox_hotels:
+  - hotel_id: hildesheim
+    name: HeyLou Hildesheim
+    location: "Hildesheim, DE"
+    pms_type: mews
+    rms_type: ideas
+  - hotel_id: cape-coral
+    name: HeyLou Cape Coral
+    location: "Cape Coral, FL, USA"
+    pms_type: mews
+    rms_type: ideas
+  - hotel_id: munich
+    name: HeyLou Munich
+    location: "Munich, DE"
+    pms_type: mews
+    rms_type: ideas
+
+# === Skeleton-Key-Adapter Endpoints (lokal, Python-Module) ===
+adapters:
+  mews:
+    module: src.skeleton_key_adapter
+    class: MEWSAdapter
+    description: PMS Mews Connector (Mock-Default)
+  booking_com:
+    module: src.skeleton_key_adapter
+    class: BookingComAdapter
+    description: OTA Booking.com Connector (Mock-Default)
+  ideas_revenue:
+    module: src.skeleton_key_adapter
+    class: IdeasRevenueAdapter
+    description: RMS IDeaS Revenue Connector (Mock-Default)
+  generic_api:
+    module: src.skeleton_key_adapter
+    class: GenericAPIAdapter
+    description: Skeleton-Key Generic HTTP Connector mit Endpoint-Discovery
+
+# === Promotion-Pfad ===
+promotion_path:
+  current_tier: SKELETON
+  target_tier: PRE-PRODUCTION-CONDITIONAL  # Welle-36 nach Cross-LLM-Audit
+  pflicht_aktionen_welle_36:
+    - Cross-LLM-Wargame mit Codex+Gemini+Copilot auf alle 4 Adapter + LLM-Router
+    - Failure-Injection-Test-Pack >=7 Tests
+    - Real-LLM-Integration via DF_HEYLOU_REAL_LLM_ENABLED=true Pilot
+    - Multi-Tenant-Isolation-Tests (Tenant-A liest Tenant-B → assert empty)
+    - Hildesheim-Pilot 30 Tage Real-Travel-Operation
+
+# === Cascade-Hebel-Invarianten (rules/token-engpass-hierarchie.md §Cascade-Hebel) ===
+cascade_invariants:
+  orthogonal: "Adapter arbeiten auf disjunkten Endpoint-Schemas (PMS!=OTA!=RMS!=GenericAPI)"
+  kanonisch: "Alle Adapter produzieren strukturierte Schemas (frozen dataclass: AdapterResponse)"
+  monoton: "Aggregator-Layer verengen nur (worst-of-N, max-rho-pick), expandieren nie"
+  persistent: "JSONL Audit-Log pro Adapter + LoopReport-JSON"
+  bounded: "Per-Adapter timeout 30s, Loop per-phase 600s, Max 30 Tool-Uses pro Travel-Query"

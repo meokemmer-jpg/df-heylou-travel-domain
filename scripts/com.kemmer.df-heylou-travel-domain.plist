@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- DF-HeyLou-Travel-Domain macOS LaunchAgent [CRUX-MK]
+     Welle-35 Foundation-DF (11. Foundation-DF im Kemmer-System).
+     Install: cp scripts/com.kemmer.df-heylou-travel-domain.plist ~/Library/LaunchAgents/
+              launchctl load ~/Library/LaunchAgents/com.kemmer.df-heylou-travel-domain.plist
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.kemmer.df-heylou-travel-domain</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>/Users/make/Projects/dark-factories/df-heylou-travel-domain/scripts/run-df-heylou-travel-domain-mac.sh</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StartInterval</key>
+    <integer>3600</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/make/Projects/dark-factories/df-heylou-travel-domain/runs/stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/make/Projects/dark-factories/df-heylou-travel-domain/runs/stderr.log</string>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/make/Projects/dark-factories/df-heylou-travel-domain</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>DF_HEYLOU_REAL_LLM_ENABLED</key>
+        <string>false</string>
+        <key>DF_HEYLOU_REAL_ADAPTER_ENABLED</key>
+        <string>false</string>
+        <key>DF_HEYLOU_TENANT_ID</key>
+        <string>hildesheim</string>
+        <key>DF_HEYLOU_GOAL</key>
+        <string>Daily Travel-Domain-Health-Check</string>
+    </dict>
+</dict>
+</plist>
