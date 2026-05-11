@@ -17,10 +17,20 @@ import hmac
 import json
 import logging
 import os
+import sys
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+
+# W35-C Foundation: Provenance-Envelope (Patch-1 K12)
+_DF_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(_DF_ROOT))
+try:
+    from _df_common.provenance_envelope import wrap_with_provenance  # type: ignore
+    W35C_FOUNDATION = True
+except ImportError:
+    W35C_FOUNDATION = False
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +136,24 @@ class AuditLogger:
         except Exception as e:
             logger.error(f"audit log write failed: {e}")
             # Failure-isolation: nicht raisen, damit Caller nicht crasht
+
+        # W35-C Patch-1 K12: also write provenance-wrapped sidecar
+        if W35C_FOUNDATION:
+            try:
+                provenance_dir = self.audit_dir / "provenance"
+                provenance_dir.mkdir(parents=True, exist_ok=True)
+                wrapped = wrap_with_provenance(
+                    output=asdict(entry),
+                    provider="audit-logger",
+                    prompt=f"{event_type}::{target}",
+                    model_version="df-heylou-travel-audit-v1",
+                    df_name=self.df_id,
+                )
+                provenance_file = provenance_dir / f"{target}-{self._today_iso()}.provenance.jsonl"
+                with provenance_file.open("a", encoding="utf-8") as f:
+                    f.write(json.dumps(wrapped) + "\n")
+            except Exception as e:
+                logger.warning(f"provenance wrap failed (non-fatal): {e}")
 
         return entry
 

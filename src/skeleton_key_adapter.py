@@ -66,6 +66,9 @@ class TravelSoftwareAdapter(ABC):
         else:
             self.sandbox_mode = sandbox_mode
         self._connected = False
+        # W35-C Patch-1 K11: in-memory idempotency cache for mutations (book/cancel)
+        # Real implementation persists via SQLite-WAL (per persistent-state-sqlite-pattern)
+        self._idempotency_cache: dict[str, AdapterResponse] = {}
 
     @abstractmethod
     def connect(self) -> bool:
@@ -94,6 +97,44 @@ class TravelSoftwareAdapter(ABC):
 
     def _now_iso(self) -> str:
         return datetime.now(timezone.utc).isoformat()
+
+    def book_room_idempotent(
+        self,
+        booking_request: dict,
+        idempotency_key: str,
+    ) -> AdapterResponse:
+        """W35-C K11 Idempotency-Wrapper around book_room().
+
+        Per SAGA-Pattern: same idempotency_key returns cached response.
+        Different keys execute new bookings.
+        """
+        if idempotency_key in self._idempotency_cache:
+            cached = self._idempotency_cache[idempotency_key]
+            logger.info(
+                f"[K11-IDEMPOTENCY] adapter={self.adapter_name} "
+                f"replay key={idempotency_key[:16]}..."
+            )
+            return cached
+        result = self.book_room(booking_request)
+        self._idempotency_cache[idempotency_key] = result
+        return result
+
+    def cancel_booking_idempotent(
+        self,
+        booking_id: str,
+        idempotency_key: str,
+    ) -> AdapterResponse:
+        """W35-C K11 Idempotency-Wrapper around cancel_booking()."""
+        if idempotency_key in self._idempotency_cache:
+            cached = self._idempotency_cache[idempotency_key]
+            logger.info(
+                f"[K11-IDEMPOTENCY] adapter={self.adapter_name} "
+                f"replay-cancel key={idempotency_key[:16]}..."
+            )
+            return cached
+        result = self.cancel_booking(booking_id)
+        self._idempotency_cache[idempotency_key] = result
+        return result
 
     def _t5_inbox_note(self, reason: str, context: dict) -> None:
         """T5-Mensch-Gateway-Skeleton-Key-Inbox-Note bei Auth-Failures.
