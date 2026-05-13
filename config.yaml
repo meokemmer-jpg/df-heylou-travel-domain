@@ -12,6 +12,22 @@ welle_introduced: welle-35
 type: foundation-df
 crux-mk: true
 
+# === Default-Action (per ausreden-schutz.md Schicht 2, Welle-47 Migration Batch-1) ===
+default_action:
+  description: "Travel-Knowledge-Graph-Lookup (3 Sandbox-Hotels: hildesheim/cape-coral/munich) + Skeleton-Key-Adapter (MEWS/Booking.com/IDeaS/Generic) Mock-Default + 6-LLM-Sub-Funktion-Routing (ollama+gemini+openai+grok+mistral+deepseek)"
+  rho_per_run_eur: 150
+  rho_validation_source: unvalidated
+  block_gates:
+    - gate_id: K13_PAV
+      block_reason: "Pre-Action-Verification Pflicht: forbidden_patterns (real-payment/real-booking) + env_tag + tenant_id Pflicht"
+      false_block_cost_eur: 120
+      legitimate_block_condition: "forbidden_patterns detected ODER DF_HEYLOU_TENANT_ID fehlt ODER PHRONESIS_TICKET fehlt bei Real-Mode"
+    - gate_id: K15
+      block_reason: "Pipeline-Cost-Estimate Pflicht: max Quota-Budget pro Run, kein Pipeline-Run >150 EUR ohne Phronesis"
+      false_block_cost_eur: 80
+      legitimate_block_condition: "Cost-Estimate > 150 EUR pro Run UND PHRONESIS_TICKET fehlt"
+  graceful_degradation_path: "Standalone-Mode (Knowledge-Graph + Mock-Adapter, 60% Capability) bei DF_HEYLOU_REAL_LLM_ENABLED=false ODER all-llm-unreachable"
+
 # === LLM Provider (Welle-35: 6 Provider, Sub-Funktion-Pattern) ===
 llm_providers:
   - ollama-local         # Primary: lokal, Internet-unabhaengig
