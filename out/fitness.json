@@ -1,0 +1,8 @@
+{
+  "df": "df-heylou-travel-domain",
+  "ts": "2026-06-05T10:25:43.083578+00:00",
+  "ok": true,
+  "bytes": 2636,
+  "model": "qwen2.5:14b-instruct",
+  "duration_s": 59.6
+}

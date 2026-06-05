@@ -42,3 +42,9 @@ storage_state.json
 .idea/
 *.swp
 *.swo
+*.env
+*.db
+*.sqlite
+*.sqlite3
+secrets.json
+credentials.json
