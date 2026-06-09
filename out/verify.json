@@ -1,0 +1,12 @@
+{
+  "df": "df-heylou-travel-domain",
+  "ts": "2026-06-09T02:16:19.182654+00:00",
+  "has_src": true,
+  "parse_ok": true,
+  "has_tests": true,
+  "test_ran": true,
+  "tests_passed": false,
+  "code_hash": "38bef1853a2d6fe5",
+  "python": "3.14.4",
+  "crux": "[CRUX-MK]"
+}
