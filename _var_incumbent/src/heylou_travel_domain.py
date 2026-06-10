@@ -4,319 +4,312 @@ import hashlib
 import hmac
 import json
 import os
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional
-
-
-DEFAULT_PROVIDERS = (
-    "ollama_local",
-    "gemini",
-    "openai",
-    "grok",
-    "mistral",
-    "deepseek",
-)
-
-
-def _stable_json(data: Any) -> str:
-    return json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+import time
+import uuid
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Protocol
 
 
 class AuditLogger:
-    @staticmethod
-    def sign_payload(payload: Dict[str, Any], secret: str) -> str:
-        return hmac.new(
-            secret.encode("utf-8"),
-            _stable_json(payload).encode("utf-8"),
-            hashlib.sha256,
-        ).hexdigest()
+    def __init__(self, secret: str) -> None:
+        self._secret = secret.encode("utf-8")
+        self.events: List[Dict[str, Any]] = []
 
-    @staticmethod
-    def verify_signature(payload: Dict[str, Any], secret: str, signature: str) -> bool:
-        expected = AuditLogger.sign_payload(payload, secret)
-        return hmac.compare_digest(expected, signature)
-
-
-@dataclass(frozen=True)
-class HumanGatewayNote:
-    system: str
-    reason: str
-    action: str
+    def log(self, event_type: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        body = {
+            "event_type": event_type,
+            "payload": payload,
+            "ts": int(time.time()),
+        }
+        raw = json.dumps(body, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        signature = hmac.new(self._secret, raw, hashlib.sha256).hexdigest()
+        event = dict(body)
+        event["signature"] = signature
+        self.events.append(event)
+        return event
 
 
+@dataclass
 class TravelKnowledgeGraph:
-    def __init__(self) -> None:
-        self.hotels = {
-            "berlin": {"name": "HeyLou Berlin Mitte", "stars": 4, "segment": "city"},
-            "paris": {"name": "HeyLou Paris Rive Gauche", "stars": 4, "segment": "city"},
-            "rome": {"name": "HeyLou Roma Centro", "stars": 4, "segment": "city"},
-        }
-        self.routes = {
-            ("berlin", "paris"): {"mode": "train", "duration_h": 8},
-            ("berlin", "rome"): {"mode": "flight", "duration_h": 2},
-            ("paris", "rome"): {"mode": "flight", "duration_h": 2},
-        }
-        self.rates = {
-            "city": {"currency": "EUR", "nightly_from": 149},
-        }
-        self.preferences = {
-            "business": {"wifi": True, "breakfast": True, "late_checkin": True},
-            "family": {"wifi": True, "breakfast": True, "extra_bed": True},
-            "leisure": {"wifi": True, "breakfast": False, "late_checkout": True},
-        }
+    hotels: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    routes: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    traveler_profiles: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
-    def enrich(self, request: Dict[str, Any]) -> Dict[str, Any]:
-        destination = str(request["destination"]).lower()
-        origin = str(request.get("origin", destination)).lower()
-        traveler_type = str(request.get("traveler_type", "leisure")).lower()
+    @classmethod
+    def with_mock_data(cls) -> "TravelKnowledgeGraph":
+        return cls(
+            hotels={
+                "BER_CITY": {
+                    "city": "Berlin",
+                    "name": "Mock Berlin Mitte Hotel",
+                    "nightly_rate_eur": 145,
+                    "amenities": ["wifi", "breakfast", "late-checkin"],
+                },
+                "MUC_CENTRAL": {
+                    "city": "Munich",
+                    "name": "Mock Munich Central Hotel",
+                    "nightly_rate_eur": 189,
+                    "amenities": ["wifi", "spa"],
+                },
+            },
+            routes={
+                "HAM->BER": {
+                    "mode": "train",
+                    "duration_min": 110,
+                    "co2_score": "low",
+                },
+                "MUC->BER": {
+                    "mode": "flight",
+                    "duration_min": 65,
+                    "co2_score": "medium",
+                },
+            },
+            traveler_profiles={
+                "default": {
+                    "preferred_amenities": ["wifi", "breakfast"],
+                    "budget_max_eur": 200,
+                    "loyalty_tier": "gold",
+                }
+            },
+        )
 
-        hotel = self.hotels.get(destination, {"name": f"HeyLou {destination.title()}", "stars": 4, "segment": "city"})
-        route = self.routes.get((origin, destination), {"mode": "unknown", "duration_h": None})
-        rate = self.rates.get(hotel["segment"], {"currency": "EUR", "nightly_from": 199})
-        prefs = self.preferences.get(traveler_type, self.preferences["leisure"])
+    def enrich_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        destination = request["destination"]
+        origin = request.get("origin")
+        traveler_id = request.get("traveler_id", "default")
 
-        itinerary_key = f"{origin}:{destination}:{request.get('check_in')}:{request.get('nights', 1)}"
-        itinerary_id = hashlib.sha256(itinerary_key.encode("utf-8")).hexdigest()[:12]
+        hotel_candidates = [
+            {"hotel_id": hotel_id, **hotel}
+            for hotel_id, hotel in self.hotels.items()
+            if hotel["city"].lower() == destination.lower()
+        ]
+
+        route = None
+        if origin:
+            route = self.routes.get(f"{origin}->{destination[:3].upper()}") or self.routes.get(
+                f"{origin}->{destination}"
+            )
 
         return {
-            "destination": destination,
-            "origin": origin,
-            "hotel": hotel,
+            "request": dict(request),
+            "traveler_profile": self.traveler_profiles.get(traveler_id, self.traveler_profiles["default"]),
+            "hotel_candidates": hotel_candidates,
             "route": route,
-            "rate": rate,
-            "preferences": prefs,
-            "itinerary_id": itinerary_id,
         }
 
 
-class TravelSoftwareAdapter(ABC):
-    name: str = "base"
+class TravelSoftwareAdapter(Protocol):
+    name: str
 
-    def __init__(self, sandbox_mode: bool = True) -> None:
-        self.sandbox_mode = sandbox_mode
+    def fetch_availability(self, destination: str, nights: int) -> Dict[str, Any]:
+        ...
 
-    def authenticate(self, credentials: Optional[Dict[str, str]]) -> bool:
-        return bool(credentials and credentials.get("token") == "valid-token")
-
-    @abstractmethod
-    def fetch_offer(self, query: Dict[str, Any], credentials: Optional[Dict[str, str]]) -> Dict[str, Any]:
-        raise NotImplementedError
+    def authenticate(self) -> bool:
+        ...
 
 
-class MEWSAdapter(TravelSoftwareAdapter):
-    name = "mews"
+@dataclass
+class BaseMockAdapter:
+    name: str
+    auth_token: Optional[str] = None
 
-    def fetch_offer(self, query: Dict[str, Any], credentials: Optional[Dict[str, str]]) -> Dict[str, Any]:
-        if not self.authenticate(credentials):
+    def authenticate(self) -> bool:
+        return bool(self.auth_token or os.getenv("DF_HEYLOU_MOCK_AUTH", "1") == "1")
+
+    def fetch_availability(self, destination: str, nights: int) -> Dict[str, Any]:
+        if not self.authenticate():
             return {
+                "adapter": self.name,
                 "ok": False,
-                "gateway_note": HumanGatewayNote(
-                    system="MEWSAdapter",
-                    reason="authentication_failed",
-                    action="T5-Mensch-Gateway-Inbox informieren und Credentials pruefen",
-                ),
+                "reason": "auth_failed",
+                "human_gateway_note": f"T5 inbox: authentication failed for {self.name}",
             }
         return {
+            "adapter": self.name,
             "ok": True,
-            "source": self.name,
-            "sandbox_mode": self.sandbox_mode,
-            "offer_code": f"MEWS-{query['itinerary_id']}",
-            "nightly_rate": query["rate"]["nightly_from"],
+            "destination": destination,
+            "nights": nights,
+            "availability": "mock-available",
         }
 
 
-class BookingComAdapter(TravelSoftwareAdapter):
-    name = "booking_com"
-
-    def fetch_offer(self, query: Dict[str, Any], credentials: Optional[Dict[str, str]]) -> Dict[str, Any]:
-        if not self.authenticate(credentials):
-            return {
-                "ok": False,
-                "gateway_note": HumanGatewayNote(
-                    system="BookingComAdapter",
-                    reason="authentication_failed",
-                    action="T5-Mensch-Gateway-Inbox informieren und OTA-Token erneuern",
-                ),
-            }
-        return {
-            "ok": True,
-            "source": self.name,
-            "sandbox_mode": self.sandbox_mode,
-            "offer_code": f"BCOM-{query['itinerary_id']}",
-            "nightly_rate": query["rate"]["nightly_from"] + 5,
-        }
+class MEWSAdapter(BaseMockAdapter):
+    def __init__(self, auth_token: Optional[str] = None) -> None:
+        super().__init__("MEWSAdapter", auth_token)
 
 
-class IdeasRevenueAdapter(TravelSoftwareAdapter):
-    name = "ideas_revenue"
-
-    def fetch_offer(self, query: Dict[str, Any], credentials: Optional[Dict[str, str]]) -> Dict[str, Any]:
-        if not self.authenticate(credentials):
-            return {
-                "ok": False,
-                "gateway_note": HumanGatewayNote(
-                    system="IdeasRevenueAdapter",
-                    reason="authentication_failed",
-                    action="T5-Mensch-Gateway-Inbox informieren und RMS-Zugang pruefen",
-                ),
-            }
-        uplift = 12 if query["preferences"].get("breakfast") else 0
-        return {
-            "ok": True,
-            "source": self.name,
-            "sandbox_mode": self.sandbox_mode,
-            "recommended_rate": query["rate"]["nightly_from"] + uplift,
-        }
+class BookingComAdapter(BaseMockAdapter):
+    def __init__(self, auth_token: Optional[str] = None) -> None:
+        super().__init__("BookingComAdapter", auth_token)
 
 
-class GenericAPIAdapter(TravelSoftwareAdapter):
-    name = "generic_api"
-
-    def discover_endpoints(self, base_url: str) -> List[str]:
-        base = base_url.rstrip("/")
-        return [f"{base}/health", f"{base}/offers", f"{base}/bookings"]
-
-    def fetch_offer(self, query: Dict[str, Any], credentials: Optional[Dict[str, str]]) -> Dict[str, Any]:
-        if not self.authenticate(credentials):
-            return {
-                "ok": False,
-                "gateway_note": HumanGatewayNote(
-                    system="GenericAPIAdapter",
-                    reason="authentication_failed",
-                    action="T5-Mensch-Gateway-Inbox informieren und Skeleton-Key-Auth reparieren",
-                ),
-            }
-        return {
-            "ok": True,
-            "source": self.name,
-            "sandbox_mode": self.sandbox_mode,
-            "endpoints": self.discover_endpoints("https://mock.heylou.local"),
-            "offer_code": f"GEN-{query['itinerary_id']}",
-            "nightly_rate": query["rate"]["nightly_from"],
-        }
+class IdeasRevenueAdapter(BaseMockAdapter):
+    def __init__(self, auth_token: Optional[str] = None) -> None:
+        super().__init__("IdeasRevenueAdapter", auth_token)
 
 
-def build_adapter(name: str, sandbox_mode: bool = True) -> TravelSoftwareAdapter:
-    adapters = {
-        "mews": MEWSAdapter,
-        "booking_com": BookingComAdapter,
-        "ideas_revenue": IdeasRevenueAdapter,
-        "generic_api": GenericAPIAdapter,
-    }
-    try:
-        return adapters[name](sandbox_mode=sandbox_mode)
-    except KeyError as exc:
-        raise ValueError(f"unknown adapter: {name}") from exc
+class GenericAPIAdapter(BaseMockAdapter):
+    def __init__(self, endpoint: str = "https://mock.local/discovery", auth_token: Optional[str] = None) -> None:
+        super().__init__("GenericAPIAdapter", auth_token)
+        self.endpoint = endpoint
+
+    def fetch_availability(self, destination: str, nights: int) -> Dict[str, Any]:
+        base = super().fetch_availability(destination, nights)
+        base["discovered_endpoint"] = self.endpoint
+        return base
+
+
+@dataclass
+class LLMProviderResult:
+    provider: str
+    answer: Dict[str, Any]
+    signature: str
+    mode: str
 
 
 class LLMSubfunctionRouter:
-    def __init__(self, secret: str, providers: Iterable[str] = DEFAULT_PROVIDERS) -> None:
-        self.secret = secret
-        self.providers = tuple(providers)
+    PROVIDERS = ("ollama", "gemini", "openai", "grok", "mistral", "deepseek")
 
-    @staticmethod
-    def _is_real_calls_enabled() -> bool:
-        return os.getenv("DF_HEYLOU_REAL_LLM_ENABLED", "").lower() == "true"
+    def __init__(self, secret: str, real_calls_enabled: Optional[bool] = None) -> None:
+        self._secret = secret.encode("utf-8")
+        self.real_calls_enabled = (
+            os.getenv("DF_HEYLOU_REAL_LLM_ENABLED", "false").lower() == "true"
+            if real_calls_enabled is None
+            else real_calls_enabled
+        )
 
-    @staticmethod
-    def _has_ticket() -> bool:
-        return bool(os.getenv("PHRONESIS_TICKET"))
+    def route(self, enriched_context: Dict[str, Any], providers: Optional[List[str]] = None) -> List[LLMProviderResult]:
+        chosen = providers or ["ollama", "openai"]
+        results = []
+        for provider in chosen:
+            if provider not in self.PROVIDERS:
+                raise ValueError(f"Unsupported provider: {provider}")
+            answer = self._mock_answer(provider, enriched_context)
+            signature = self._sign(provider, answer, enriched_context)
+            results.append(
+                LLMProviderResult(
+                    provider=provider,
+                    answer=answer,
+                    signature=signature,
+                    mode="real" if self.real_calls_enabled else "sandbox",
+                )
+            )
+        return results
 
-    def _mock_response(self, provider: str, task: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
-        recommendation = {
-            "itinerary_id": context["itinerary_id"],
-            "hotel_name": context["hotel"]["name"],
-            "destination": context["destination"],
-            "nightly_rate": context["rate"]["nightly_from"],
-        }
-        reasoning = f"{provider} validated travel plan for {context['destination']}"
+    def cross_validate(self, results: List[LLMProviderResult]) -> bool:
+        if len(results) < 2:
+            return False
+        destination_set = {item.answer["destination"] for item in results}
+        budget_flags = {item.answer["within_budget"] for item in results}
+        return len(destination_set) == 1 and len(budget_flags) == 1
+
+    def _mock_answer(self, provider: str, enriched_context: Dict[str, Any]) -> Dict[str, Any]:
+        request = enriched_context["request"]
+        hotels = enriched_context["hotel_candidates"]
+        traveler = enriched_context["traveler_profile"]
+
+        best = min(
+            hotels,
+            key=lambda h: (h["nightly_rate_eur"], h["name"]),
+        ) if hotels else None
+
+        total = best["nightly_rate_eur"] * request["nights"] if best else None
         return {
             "provider": provider,
-            "mode": "mock" if not self._is_real_calls_enabled() else "real-gated",
-            "reasoning": reasoning,
-            "recommendation": recommendation,
-            "task_type": task.get("task_type", "plan_trip"),
+            "destination": request["destination"],
+            "recommended_hotel": best["name"] if best else None,
+            "estimated_total_eur": total,
+            "within_budget": bool(total is not None and total <= traveler["budget_max_eur"] * request["nights"]),
+            "reasoning_profile": {
+                "ollama": "offline-primary",
+                "gemini": "long-context-itinerary",
+                "openai": "booking-logic",
+                "grok": "disruption-monitoring",
+                "mistral": "eu-compliance",
+                "deepseek": "cost-routine",
+            }[provider],
         }
 
-    def _signed_call(self, provider: str, task: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
-        envelope = {
+    def _sign(self, provider: str, answer: Dict[str, Any], enriched_context: Dict[str, Any]) -> str:
+        payload = {
             "provider": provider,
-            "task": task,
-            "context": context,
-            "sandbox_mode": not (self._is_real_calls_enabled() and self._has_ticket()),
+            "answer": answer,
+            "context": enriched_context,
         }
-        signature = AuditLogger.sign_payload(envelope, self.secret)
-        response = self._mock_response(provider, task, context)
-        return {
-            "request_envelope": envelope,
-            "signature": signature,
-            "response": response,
-        }
+        raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hmac.new(self._secret, raw, hashlib.sha256).hexdigest()
 
-    def route(
+
+@dataclass
+class TravelDomainResult:
+    request_id: str
+    enriched_context: Dict[str, Any]
+    adapter_results: List[Dict[str, Any]]
+    llm_results: List[LLMProviderResult]
+    cross_validated: bool
+    audit_event: Dict[str, Any]
+
+
+class DomainOrchestrator:
+    def __init__(
         self,
-        task: Dict[str, Any],
-        context: Dict[str, Any],
-        primary_provider: str = "ollama_local",
-    ) -> Dict[str, Any]:
-        if primary_provider not in self.providers:
-            raise ValueError(f"unknown provider: {primary_provider}")
+        knowledge_graph: TravelKnowledgeGraph,
+        router: LLMSubfunctionRouter,
+        adapters: List[TravelSoftwareAdapter],
+        audit_logger: AuditLogger,
+    ) -> None:
+        self.knowledge_graph = knowledge_graph
+        self.router = router
+        self.adapters = adapters
+        self.audit_logger = audit_logger
 
-        criticality = str(task.get("criticality", "")).upper()
-        require_cross_validation = criticality in {"K_0", "Q_0"}
-
-        providers_used = [primary_provider]
-        if require_cross_validation:
-            for provider in self.providers:
-                if provider != primary_provider:
-                    providers_used.append(provider)
-                if len(providers_used) >= 2:
-                    break
-
-        calls = [self._signed_call(provider, task, context) for provider in providers_used]
-        recommendations = [call["response"]["recommendation"] for call in calls]
-        consensus = len({ _stable_json(r) for r in recommendations }) == 1
-
-        return {
-            "sandbox_mode": not (self._is_real_calls_enabled() and self._has_ticket()),
-            "primary_provider": primary_provider,
-            "providers_used": providers_used,
-            "cross_validated": require_cross_validation,
-            "consensus": consensus,
-            "calls": calls,
-            "final_recommendation": recommendations[0],
+    def plan_trip(self, origin: str, destination: str, nights: int, traveler_id: str = "default") -> TravelDomainResult:
+        request = {
+            "origin": origin,
+            "destination": destination,
+            "nights": nights,
+            "traveler_id": traveler_id,
         }
+        enriched = self.knowledge_graph.enrich_request(request)
+        adapter_results = [adapter.fetch_availability(destination, nights) for adapter in self.adapters]
+        llm_results = self.router.route(enriched, providers=["ollama", "openai"])
+        cross_validated = self.router.cross_validate(llm_results)
+
+        request_id = f"heylou-{uuid.uuid4().hex[:12]}"
+        audit_event = self.audit_logger.log(
+            "travel_plan_created",
+            {
+                "request_id": request_id,
+                "destination": destination,
+                "providers": [r.provider for r in llm_results],
+                "cross_validated": cross_validated,
+            },
+        )
+
+        return TravelDomainResult(
+            request_id=request_id,
+            enriched_context=enriched,
+            adapter_results=adapter_results,
+            llm_results=llm_results,
+            cross_validated=cross_validated,
+            audit_event=audit_event,
+        )
 
 
-def plan_trip(
-    request: Dict[str, Any],
-    *,
-    adapter_name: str = "generic_api",
-    primary_provider: str = "ollama_local",
-    credentials: Optional[Dict[str, str]] = None,
-    secret: str = "heylou-dev-secret",
-) -> Dict[str, Any]:
-    graph = TravelKnowledgeGraph()
-    context = graph.enrich(request)
+def build_default_orchestrator(secret: str = "heylou-secret") -> DomainOrchestrator:
+    graph = TravelKnowledgeGraph.with_mock_data()
+    router = LLMSubfunctionRouter(secret=secret, real_calls_enabled=False)
+    adapters: List[TravelSoftwareAdapter] = [
+        MEWSAdapter(),
+        BookingComAdapter(),
+        IdeasRevenueAdapter(),
+        GenericAPIAdapter(),
+    ]
+    audit_logger = AuditLogger(secret=secret)
+    return DomainOrchestrator(graph, router, adapters, audit_logger)
 
-    adapter = build_adapter(adapter_name, sandbox_mode=True)
-    adapter_result = adapter.fetch_offer(context, credentials)
 
-    router = LLMSubfunctionRouter(secret=secret)
-    llm_result = router.route(
-        task={
-            "task_type": "plan_trip",
-            "criticality": request.get("criticality", "K_1"),
-        },
-        context=context,
-        primary_provider=primary_provider,
-    )
-
-    return {
-        "request": request,
-        "context": context,
-        "adapter_result": adapter_result,
-        "llm_result": llm_result,
-    }
+def execute_heylou_travel_planning(origin: str, destination: str, nights: int) -> TravelDomainResult:
+    orchestrator = build_default_orchestrator()
+    return orchestrator.plan_trip(origin=origin, destination=destination, nights=nights)
 # [CRUX-MK]

@@ -1,46 +1,87 @@
 # df-heylou-travel-domain — PRODUKTION [CRUX-MK]
-*2026-06-09T01:16:27.138510+00:00 | ollama-local/kemmer-14b-ctx8k*
+*2026-06-09T14:43:21.458902+00:00 | ollama-local/kemmer-14b-ctx8k*
 
-# Dokumentation der HeyLou Reisen AI OTA APP
+# HeyLou Reisen AI OTA APP Dokumentation
+
+## Einführung
+HeyLou-Reisen ist eine künstliche Intelligenz, die spezialisiert auf den Bereich der Reiseplanung und -buchung ist. Sie integriert sich als Subfunktion in fünf Generalzweck-LLM-Plattformen: Gemini, OpenAI (ChatGPT/Codex), Grok (xAI), Mistral und DeepSeek. Zusätzlich bildet sie eine zentrale Webseite zum Onboarding von Hoteliers.
+
+Diese Dokumentation dient als grundlegende Strukturierung für den Einsatz der HeyLou-Reisen AI OTA APP in der Industrie, um die Flexibilität und Effizienz bei Reiseplanung und -buchung zu erhöhen. Die Architektur des Systems ist so gestaltet, dass sie sich anpassen kann, um verschiedene Plattformen und Anbieter zu unterstützen.
 
 ## Mission
 
-HeyLou-Reisen ist eine künstliche-intelligenz-basierte Funktion, die sich auf den Bereich der Reiseplanung und -buchung spezialisiert hat. Sie wird als Subfunktion in fünf Generalzweck-LLM-Plattformen integriert: Gemini, OpenAI (ChatGPT/Codex), Grok (xAI), Mistral und DeepSeek. Zusätzlich bildet sie eine zentrale Webseite zum Onboarding von Hoteliers.
+HeyLou-Reisen wurde entwickelt, um die Komplexität der Reiseplanungs- und Buchungsprozesse für Hotels, OTAs, PMSs und RMSs zu reduzieren. Durch ihre Integration in fünf Generalzweck-LLM-Plattformen bietet sie eine zentrale Schnittstelle, die es den Nutzern ermöglicht, alle notwendigen Informationen und Anfragen schnell und effizient abzuarbeiten.
+
+### Zielgruppe
+HeyLou-Reisen ist für Hoteliers, Reisebüros, Onlineservice-Portale (OTAs) und Revenue Management Systeme (RMSs) gedacht, die eine zentrale Plattform benötigen, um ihre Reiseangebote zu optimieren und zu verwalten.
 
 ## Architektur
 
-Die Architektur des Systems besteht aus fünf Modulen:
+Die Architektur von HeyLou-Reisen ist in fünf Hauptmodule unterteilt:
 
-1. **travel_knowledge_graph.py**: Enthält in-Memory-Daten für Hotels, Routen, Preise und Präferenzen (mit Mock-Daten).
-2. **skeleton_key_adapter.py**: Schnittstellendesign für PMS/OTA/RMS-Konnektoren mit vier konkreten Anwendungen: MEWSAdapter (PMS), BookingComAdapter (OTA), IdeasRevenueAdapter (RMS) und GenericAPIAdapter (Skeleton-Key-Pattern: HTTP-API-Connector).
-3. **llm_subfunction_router.py**: Routenplaner für sechs LLM-Provider, der jede Anfrage mit HMAC-SHA256-Zugriffssicherheit signiert.
-4. **domain_orchestrator.py**: Führt einen fünfphasigen Loop aus und dient als Entry-Punkt des LaunchAgents.
-5. **audit_logger.py**: Protokolliert alle Aktionen, die durch die KI ausgeführt werden, inklusive HMAC-Signatur.
+1. **travel_knowledge_graph.py**
+2. **skeleton_key_adapter.py**
+3. **llm_subfunction_router.py**
+4. **domain_orchestrator.py**
+5. **audit_logger.py**
 
-## Funktionalität
+### 1. travel_knowledge_graph.py
+
+Dieses Modul enthält die zentrale Datenbank, in der Reiseinformationen wie Hotels, Routen, Preise und Präferenzen gespeichert sind. Die Informationen werden in einem In-Memory-Modell gehalten und können mit Mock-Daten gefüllt sein, um den Testprozess zu erleichtern.
+
+#### Hauptfunktionen:
+- Zentralisierung von Reiseinformationen.
+- Verwaltung von Hotels, Routen, Preisen und Präferenzen.
+- Möglichkeit zur Erweiterung durch externe Datenquellen (APIs).
+
+### 2. skeleton_key_adapter.py
+
+Dieses Modul ist der Schnittstellendesign für PMS/OTA/RMS-Konnektoren. Es umfasst vier konkrete Anwendungen:
+- MEWSAdapter: Verbindet HeyLou-Reisen mit dem Property Management System (PMS).
+- BookingComAdapter: Integriert die OTAs, wie Booking.com.
+- IdeasRevenueAdapter: Verbindet das Revenue Management System (RMS) für optimierte Buchungsstrategien.
+- GenericAPIAdapter: Ein allgemeiner HTTP-API-Connector zur Unterstützung unbekannter oder neuen APIs.
+
+#### Hauptfunktionen:
+- Adapter-Pattern für interne und externe APIs.
+- Erstellung von Schnittstellen, um den Zugriff auf jede beliebige Hotel-/OTA-/PMS-/RMS-Software zu ermöglichen.
+- Inklusive Fehlernachrichten und Authentifizierungsmechanismen (T5-Mensch-Gateway-Inbox-Note bei Adapter-Auth-Failures).
+
+### 3. llm_subfunction_router.py
+
+Dieses Modul ist verantwortlich für die Verteilung von Anfragen an verschiedene LLMs basierend auf den spezifischen Bedürfnissen des Nutzers.
+
+#### Hauptfunktionen:
+- Routenplaner für sechs LLM-Provider.
+- Sicherheit durch HMAC-SHA256-Zugriffssicherheit.
+- Validierung aller Anfragen und Antworten durch mindestens zwei Provider, um die Integrität der Antworten zu gewährleisten.
+
+### 4. domain_orchestrator.py
+
+Dieses Modul führt den fünfphasigen Loop aus, der für den Einsatz von HeyLou-Reisen notwendig ist, sowie dient als Entry-Punkt des LaunchAgents.
+
+#### Hauptfunktionen:
+- Führen eines fuenfphasigen Loops.
+- Eintrittspunkt für den Aufbau und die Laufzeitsteuerung aller Module.
+
+### 5. audit_logger.py
+
+Dieses Modul protokolliert alle Aktionen, die durch die KI ausgeführt werden, einschließlich der HMAC-Signatur.
+
+#### Hauptfunktionen:
+- Protokollierung von Aktivitäten.
+- Sicherheit durch HMAC-Signaturen bei jedem Zugriff und Verarbeitungsprozess.
+
+## Funktionale Bestandteile
 
 ### 1. Travel-Domain-Knowledge
-Zentralisierte Datenbank mit Reiseinformationen:
-- Hotels: 2000+ in Europa (mocked)
-- Routen: 5000+ Flugrouten, Zug- und Auto-Fahrtrouten (mocked)
-- Preise: Realistische Mock-Daten für verschiedene Zeiträume
-- Präferenzen: Benutzerdefinierte Suchanfragen und Favoriten
+Zentralisierte Datenbank mit Reiseinformationen, welche Hotels, Routen, Preise und Präferenzen enthält.
 
 ### 2. Skeleton-Key-Adapter
-Adapterpatron, die es ermöglicht, mit jeder beliebigen Hotel-/OTA-/PMS-/RMS-Software zu kommunizieren:
-- **MEWSAdapter**: PMS-Industry-Leader (Mock)
-- **BookingComAdapter**: OTA-Industry-Leader (Mock)
-- **IdeasRevenueAdapter**: RMS-Industry-Leader (Mock)
-- **GenericAPIAdapter**: Allgemeine Schnittstelle zum HTTP-API-Connector
+Schnittstellendesign für PMS/OTA/RMS-Konnektoren, ermöglicht den Zugriff auf jede beliebige Hotel-/OTA-/PMS-/RMS-Software via Adapterpatron (MEWSAdapter, BookingComAdapter, IdeasRevenueAdapter, GenericAPIAdapter).
 
 ### 3. LLM-Subfunktion-Routing
-Mechanismus zur Verteilung von Anfragen an verschiedene LLMs basierend auf den spezifischen Bedürfnissen des Nutzers:
-- **Ollama-Local**: Primärer, internetunabhängiger Provider
-- **Gemini**: Langzeitkontext für komplexe Reiseitinerare (60+ Tage)
-- **OpenAI**: Inferenz und Booking-Logik (15+ Jahre Datenlage)
-- **Grok**: Echtzeit-Reise-Störungen (24/7 Updates via Webhooks)
-- **Mistral**: EU-DSGVO-konform, besonders für europäische Märkte
-- **DeepSeek**: Kostenoptimierte Routinen für saisonale Buchungen
+Mechanismus zur Verteilung von Anfragen an verschiedene LLMs basierend auf den spezifischen Bedürfnissen des Nutzers.
 
 ## Wichtige Verwendungsbestimmungen
 
@@ -49,22 +90,11 @@ Mechanismus zur Verteilung von Anfragen an verschiedene LLMs basierend auf den s
 
 ## Zukunftsvision
 
-HeyLou-Reisen soll ein zentrales System für Reiseplanung und -buchung in der Hotelindustrie sein, das dank seiner Flexibilität und Spezialität über verschiedene Plattformen und Anbieter skalierbar ist. Es soll eine effektive Schnittstelle bieten, die es den Hotels ermöglicht, ihre Buchungen zu optimieren und ihren Umsatz zu steigern.
+HeyLou-Reisen soll ein zentrales System für Reiseplanung und -buchung in der Hotelindustrie sein, welches dank seiner Flexibilität und Spezialität über verschiedene Plattformen und Anbieter skalierbar ist. Es soll eine effektive Schnittstelle bieten, die es den Hotels ermöglicht, ihre Buchungen zu optimieren und ihren Umsatz zu steigern.
 
-### 1. Skalierung
-- **Weitere LLM-Provider**: Integration von weiteren Generalzweck-LLMs basierend auf Nutzeranforderungen.
-- **Cross-Domain-Knowledge**: Ausbau der Travel-Domain-Knowledge zur umfassenderen Reiseerlebnisplanung (Exkursionen, Aktivitäten usw.).
+### Visionäre Ziele:
+- Integration mit mehreren weiteren LLMs, um ein breiteres Spektrum an Diensten anzubieten.
+- Weiterentwicklung der Travel-Domain-Knowledge für eine detailliertere Reiseplanung.
+- Verbesserung der Interaktivität und Benutzerfreundlichkeit für Hoteliers.
 
-### 2. Technische Verbesserungen
-- **Verbesserte Mock-Schnittstellen**: Erweiterung des Mock-Bereiches für realistischere Simulationsumgebungen.
-- **Sicherheitsverbesserungen**: Fortgeschrittene Zugriffskontrollen und Verschlüsselungsmechanismen.
-
-### 3. Markteintritt
-- **Onboarding-Wave 1**: Einladung von Hotelpartnern für die erste Onboarding-Welle.
-- **Marketplace Integration**: Integrierung in führende Online-Reisemarktplätze.
-
-HeyLou-Reisen ist darauf ausgelegt, einen sicheren und effizienten Einstieg in den Bereich der künstlichen Intelligenz-gestützten Reiseplanung und -buchung für Hotels zu bieten. Durch seine flexiblen Adapter-Designs und fortschrittlichen LLM-Routing-Mechanismen kann es eine wichtige Rolle bei der digitalen Transformation der Hotelindustrie spielen.
-
----
-
-Diese Dokumentation dient als grundlegende Struktur und Einleitung zur Verwendung von HeyLou-Reisen AI OTA APP. Weitere Details und spezifische Implementierungsdetails finden sich in den einzelnen Modul-Dokumentationen und der Codebase selbst.
+Diese Dokumentation dient als grundlegende Strukturierung für die Einführung von HeyLou-Reisen in der Industrie und soll fortlaufend verbessert werden, um den Anforderungen zu entsprechen.
