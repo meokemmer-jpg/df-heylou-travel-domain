@@ -1,6 +1,6 @@
 {
   "df": "df-heylou-travel-domain",
-  "ts": "2026-06-15T02:43:28.336615+00:00",
+  "ts": "2026-06-16T02:27:38.230601+00:00",
   "crux": "[CRUX-MK]",
   "winner_provider": "incumbent-kept",
   "winner_tests_passed": true,
@@ -30,16 +30,6 @@
     },
     {
       "provider": "sonnet",
-      "parse_ok": false,
-      "tests_passed": false,
-      "n_tests": 0,
-      "n_assert": null,
-      "coverage_pct": null,
-      "q": 0.0,
-      "error": "kein 2-Block-Output (nach Retry)"
-    },
-    {
-      "provider": "local",
       "parse_ok": false,
       "tests_passed": false,
       "n_tests": 0,
