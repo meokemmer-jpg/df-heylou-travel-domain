@@ -185,3 +185,17 @@ cascade_invariants:
   monoton: "Aggregator-Layer verengen nur (worst-of-N, max-rho-pick), expandieren nie"
   persistent: "JSONL Audit-Log pro Adapter + LoopReport-JSON"
   bounded: "Per-Adapter timeout 30s, Loop per-phase 600s, Max 30 Tool-Uses pro Travel-Query"
+
+# --- K11-16 Board-Haertung (evidence-based, df_k_hardening) [CRUX-MK] ---
+K11_cascade_containment: isolated_run  # evidence: df_foundation.isolated_run (echte Failure-Isolation)
+K14_human_override_decay: foundation_override  # evidence: df_foundation.run_guarded (STOP.flag-Override)
+K15_entropy_budget: foundation_budget  # evidence: df_foundation.run_guarded (Tages-Lauf-Budget)
+K16_concurrent_spawn_mutex: foundation_mutex  # evidence: df_foundation.spawn_mutex (atomarer Lock)
+K_hardening_gap: [distillation_resistance, independent_ground_truth]  # echte Luecke -> Code noetig
+K_hardening_level: declared  # 4/6 evidenz-belegt
+K_hardening_ts: 2026-06-23T05:28:42.152939+00:00
+K13_external_anchor_type: verified_web_sources
+K13_external_anchor_validation_frequency: per_anchor_run
+K13_external_anchor_count: 1
+K13_external_anchor_evidence: https://www.gastgewerbe-magazin.de/hotellerie-kennzahlen-2024-2025
+K13_anchored_ts: 2026-06-23T16:48:34.234760+00:00
