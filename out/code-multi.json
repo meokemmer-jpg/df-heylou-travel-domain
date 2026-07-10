@@ -1,22 +1,22 @@
 {
   "df": "df-heylou-travel-domain",
-  "ts": "2026-07-06T06:26:52.266477+00:00",
+  "ts": "2026-07-10T08:04:58.154442+00:00",
   "crux": "[CRUX-MK]",
   "winner_provider": "incumbent-kept",
-  "winner_tests_passed": false,
-  "incumbent_q": 1.0,
-  "winner_q": 1.0,
+  "winner_tests_passed": true,
+  "incumbent_q": 1532.0,
+  "winner_q": 1532.0,
   "improved": false,
   "variants": [
     {
       "provider": "incumbent",
       "parse_ok": true,
-      "tests_passed": false,
+      "tests_passed": true,
       "n_tests": 5,
       "n_assert": 22,
-      "coverage_pct": null,
-      "q": 1.0,
-      "error": "pytest: Command '['/usr/bin/sandbox-exec', '-p', '(version 1)(allow default)(deny networ"
+      "coverage_pct": 99.0,
+      "q": 1532.0,
+      "error": null
     },
     {
       "provider": "codex",
@@ -26,17 +26,7 @@
       "n_assert": null,
       "coverage_pct": null,
       "q": 0.0,
-      "error": "kein 2-Block-Output (nach Retry)"
-    },
-    {
-      "provider": "sonnet",
-      "parse_ok": false,
-      "tests_passed": false,
-      "n_tests": 0,
-      "n_assert": null,
-      "coverage_pct": null,
-      "q": 0.0,
-      "error": "kein 2-Block-Output (nach Retry)"
+      "error": "[codex-Fehler: [Errno 2] No such file or directory: 'codex']"
     }
   ],
   "canonical_verify": {
