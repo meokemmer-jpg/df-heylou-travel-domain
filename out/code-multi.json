@@ -1,6 +1,6 @@
 {
   "df": "df-heylou-travel-domain",
-  "ts": "2026-07-13T02:47:33.357842+00:00",
+  "ts": "2026-07-14T01:41:11.887255+00:00",
   "crux": "[CRUX-MK]",
   "winner_provider": "incumbent-kept",
   "winner_tests_passed": true,
@@ -27,6 +27,16 @@
       "coverage_pct": null,
       "q": 0.0,
       "error": "[codex-Fehler: [Errno 2] No such file or directory: 'codex']"
+    },
+    {
+      "provider": "local",
+      "parse_ok": true,
+      "tests_passed": false,
+      "n_tests": 1,
+      "n_assert": 3,
+      "coverage_pct": null,
+      "q": 1.0,
+      "error": null
     }
   ],
   "canonical_verify": {
