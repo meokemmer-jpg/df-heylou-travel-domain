@@ -1,6 +1,6 @@
 {
   "df": "df-heylou-travel-domain",
-  "ts": "2026-07-19T02:22:35.354185+00:00",
+  "ts": "2026-07-19T03:00:10.069047+00:00",
   "crux": "[CRUX-MK]",
   "winner_provider": "incumbent-kept",
   "winner_tests_passed": true,
@@ -27,6 +27,16 @@
       "coverage_pct": null,
       "q": 0.0,
       "error": "[codex-Fehler: [Errno 2] No such file or directory: 'codex']"
+    },
+    {
+      "provider": "local",
+      "parse_ok": false,
+      "tests_passed": false,
+      "n_tests": 0,
+      "n_assert": 0,
+      "coverage_pct": null,
+      "q": null,
+      "error": "module parse: unterminated string literal (detected at line 41) (<unknown>, line 41)"
     }
   ],
   "canonical_verify": {
