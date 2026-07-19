@@ -1,9 +1,9 @@
 {
   "df": "df-heylou-travel-domain",
-  "ts": "2026-07-17T15:55:42.789662+00:00",
+  "ts": "2026-07-18T15:56:14.218623+00:00",
   "maturity": "CODE",
   "maturity_level": 3,
   "evidence_grade": 3,
-  "wargame_verdict": null,
+  "wargame_verdict": "CONDITIONAL",
   "crux": "[CRUX-MK]"
 }
