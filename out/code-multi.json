@@ -1,6 +1,6 @@
 {
   "df": "df-heylou-travel-domain",
-  "ts": "2026-07-19T03:00:10.069047+00:00",
+  "ts": "2026-07-20T02:04:09.293866+00:00",
   "crux": "[CRUX-MK]",
   "winner_provider": "incumbent-kept",
   "winner_tests_passed": true,
@@ -30,13 +30,13 @@
     },
     {
       "provider": "local",
-      "parse_ok": false,
+      "parse_ok": true,
       "tests_passed": false,
-      "n_tests": 0,
-      "n_assert": 0,
+      "n_tests": 3,
+      "n_assert": 5,
       "coverage_pct": null,
-      "q": null,
-      "error": "module parse: unterminated string literal (detected at line 41) (<unknown>, line 41)"
+      "q": 1.0,
+      "error": null
     }
   ],
   "canonical_verify": {
