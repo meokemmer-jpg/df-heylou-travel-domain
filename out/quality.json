@@ -1,9 +1,10 @@
 {
   "df": "df-heylou-travel-domain",
-  "ts": "2026-07-20T03:55:44.976197+00:00",
+  "ts": "2026-07-21T03:56:03.092009+00:00",
   "maturity": "CODE",
   "maturity_level": 3,
-  "evidence_grade": 3,
+  "evidence_grade": 1,
+  "grade_basis": "doc-only: kein real gruener Test -> Grade-1 (DRAFT)",
   "wargame_verdict": "CONDITIONAL",
   "crux": "[CRUX-MK]"
 }
