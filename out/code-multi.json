@@ -1,6 +1,6 @@
 {
   "df": "df-heylou-travel-domain",
-  "ts": "2026-08-01T01:18:01.718556+00:00",
+  "ts": "2026-08-02T02:26:42.071747+00:00",
   "crux": "[CRUX-MK]",
   "winner_provider": "incumbent-kept",
   "winner_tests_passed": true,
@@ -20,22 +20,22 @@
     },
     {
       "provider": "codex",
-      "parse_ok": true,
+      "parse_ok": false,
       "tests_passed": false,
-      "n_tests": 2,
-      "n_assert": 16,
+      "n_tests": 0,
+      "n_assert": null,
       "coverage_pct": null,
-      "q": 1.0,
-      "error": null
+      "q": 0.0,
+      "error": "[codex-Fehler: Command '['codex', 'exec', '--skip-git-repo-check', '-m', 'gpt-5.4']' timed out after 220 seconds]"
     },
     {
       "provider": "local",
       "parse_ok": true,
-      "tests_passed": false,
-      "n_tests": 17,
-      "n_assert": 68,
-      "coverage_pct": null,
-      "q": 1.0,
+      "tests_passed": true,
+      "n_tests": 25,
+      "n_assert": 51,
+      "coverage_pct": 81.0,
+      "q": 1531.0,
       "error": null
     }
   ],
