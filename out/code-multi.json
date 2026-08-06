@@ -1,6 +1,6 @@
 {
   "df": "df-heylou-travel-domain",
-  "ts": "2026-08-05T02:21:14.003469+00:00",
+  "ts": "2026-08-06T01:55:52.299871+00:00",
   "crux": "[CRUX-MK]",
   "winner_provider": "incumbent-kept",
   "winner_tests_passed": true,
@@ -20,23 +20,23 @@
     },
     {
       "provider": "codex",
-      "parse_ok": true,
-      "tests_passed": false,
-      "n_tests": 2,
-      "n_assert": 14,
-      "coverage_pct": null,
-      "q": 1.0,
-      "error": null
-    },
-    {
-      "provider": "local",
       "parse_ok": false,
       "tests_passed": false,
       "n_tests": 0,
-      "n_assert": 0,
+      "n_assert": null,
       "coverage_pct": null,
-      "q": null,
-      "error": "module parse: expected an indented block after 'if' statement on line 298 (<unknown>, line 299"
+      "q": 0.0,
+      "error": "[codex-Fehler: Command '['codex', 'exec', '--skip-git-repo-check', '-m', 'gpt-5.4']' timed out after 220 seconds]"
+    },
+    {
+      "provider": "local",
+      "parse_ok": true,
+      "tests_passed": false,
+      "n_tests": 73,
+      "n_assert": 122,
+      "coverage_pct": null,
+      "q": 1.0,
+      "error": null
     }
   ],
   "canonical_verify": {
