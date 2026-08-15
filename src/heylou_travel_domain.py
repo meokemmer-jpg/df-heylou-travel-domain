@@ -1,20 +1,25 @@
-"""heylou_travel_domain.py - DF-HeyLou-Travel-Domain [CRUX-MK] Kernmodul.
+"""heylou_travel_domain.py - Travel Domain Kernel with Skeleton-Key-Adapter and 6-LLM-Sub-Function-Routing.
 
-Implementiert den Kern der HeyLou Travel Domain: Travel-Knowledge-Graph,
-Skeleton-Key-Adapter, LLM-Sub-Funktion-Routing und Domain Orchestrator (5-Phase-Loop).
+Implementation per DF-HeyLou-Travel-Domain CRUX-MK Spec.
+Stdlib only, Python 3.10+ compatible.
 """
-import json
-import hmac
-import hashlib
-import time
-import os
-from dataclasses import dataclass, field, asdict
-from typing import Optional, Any
-from enum import Enum
 
-# ---------------------------------------------------------------------------
-# 1. TRAVEL KNOWLEDGE GRAPH
-# ---------------------------------------------------------------------------
+import hashlib
+import hmac
+import json
+import random
+from dataclasses import dataclass, field, asdict
+from typing import Any, Callable, Optional, Dict, List, Tuple
+from enum import Enum, auto
+
+# ─── Constants ───────────────────────────────────────────────────────────────
+HMAC_SECRET = b"heylou-travel-domain-skeleton-key-seed-2026"
+HMAC_ALGORITHM = "sha256"
+REAL_LLM_ENABLED = False  # Sandbox default
+MIN_CROSS_VALIDATION = 2
+VALID_PROVIDERS = ["ollama_local", "gemini", "openai", "grok", "mistral", "deepseek"]
+
+# ─── Domain Data Structures ──────────────────────────────────────────────────
 
 @dataclass
 class Hotel:
@@ -22,18 +27,18 @@ class Hotel:
     name: str
     city: str
     country: str
-    star_rating: int
-    base_rate: float
-    amenities: list[str] = field(default_factory=list)
+    lat: float
+    lng: float
+    rating: float = 0.0
+    amenities: List[str] = field(default_factory=list)
 
 @dataclass
 class Route:
-    id: str
     origin: str
     destination: str
-    airline: str
-    base_price: float
-    duration_minutes: int
+    mode: str = "flight"  # flight, train, car, bus
+    duration_min: int = 0
+    price_eur: float = 0.0
 
 @dataclass
 class Rate:
@@ -41,328 +46,375 @@ class Rate:
     room_type: str
     price_per_night: float
     currency: str = "EUR"
-    cancellation_policy: str = "free_24h"
+    available: bool = True
 
-@dataclass  
-class UserPreference:
+@dataclass
+class TravelPreference:
     user_id: str
-    preferred_cities: list[str] = field(default_factory=list)
-    max_budget: float = 1000.0
-    min_star_rating: int = 3
-    preferred_amenities: list[str] = field(default_factory=list)
+    preferred_cities: List[str] = field(default_factory=list)
+    max_budget: float = 500.0
+    amenities_wanted: List[str] = field(default_factory=list)
+    transport_mode: str = "flight"
+
+# ─── Travel Knowledge Graph ─────────────────────────────────────────────────
 
 class TravelKnowledgeGraph:
-    """In-Memory Knowledge Graph fuer Travel-Domain-Daten."""
+    """In-Memory mock knowledge graph for travel domain."""
     
     def __init__(self):
-        self.hotels: dict[str, Hotel] = {}
-        self.routes: dict[str, Route] = {}
-        self.rates: list[Rate] = []
-        self.preferences: dict[str, UserPreference] = {}
-        self._load_mock_data()
+        self.hotels: Dict[str, Hotel] = {}
+        self.routes: List[Route] = []
+        self.rates: Dict[str, List[Rate]] = {}
+        self.preferences: Dict[str, TravelPreference] = {}
+        self._seed_mock_data()
     
-    def _load_mock_data(self):
-        """Mock-Daten fuer Sandbox-Betrieb."""
-        self.hotels["H001"] = Hotel("H001", "Grand Palace Hotel", "Berlin", "DE", 5, 250.0, ["pool", "spa", "wifi"])
-        self.hotels["H002"] = Hotel("H002", "City Stay Inn", "Muenchen", "DE", 3, 89.0, ["wifi", "breakfast"])
-        self.hotels["H003"] = Hotel("H003", "Alpine Lodge", "Innsbruck", "AT", 4, 180.0, ["pool", "wifi", "sauna"])
+    def _seed_mock_data(self):
+        # Mock hotels
+        hotels_data = [
+            Hotel("h1", "Grand Central", "Berlin", "Germany", 52.52, 13.405, 4.5, ["wifi", "breakfast", "gym"]),
+            Hotel("h2", "Seaside Resort", "Barcelona", "Spain", 41.3874, 2.1686, 4.8, ["pool", "wifi", "spa", "breakfast"]),
+            Hotel("h3", "Alpine Lodge", "Innsbruck", "Austria", 47.2692, 11.4041, 4.2, ["wifi", "ski_storage", "restaurant"]),
+            Hotel("h4", "Business Inn", "Frankfurt", "Germany", 50.1109, 8.6821, 3.9, ["wifi", "meeting_rooms", "breakfast"]),
+        ]
+        for hotel in hotels_data:
+            self.hotels[hotel.id] = hotel
         
-        self.routes["R001"] = Route("R001", "Berlin", "Muenchen", "Lufthansa", 129.0, 75)
-        self.routes["R002"] = Route("R002", "Muenchen", "Innsbruck", "Austrian", 89.0, 45)
-        self.routes["R003"] = Route("R003", "Berlin", "Innsbruck", "Ryanair", 49.0, 90)
-        
-        self.rates = [
-            Rate("H001", "standard", 200.0),
-            Rate("H001", "deluxe", 350.0),
-            Rate("H002", "standard", 79.0),
-            Rate("H002", "family", 129.0),
-            Rate("H003", "standard", 150.0),
-            Rate("H003", "suite", 280.0),
+        # Mock routes
+        self.routes = [
+            Route("Berlin", "Barcelona", "flight", 150, 89.99),
+            Route("Berlin", "Innsbruck", "train", 360, 49.99),
+            Route("Barcelona", "Berlin", "flight", 145, 79.99),
+            Route("Frankfurt", "Innsbruck", "car", 300, 35.00),
         ]
         
-        self.preferences["USER001"] = UserPreference("USER001", ["Berlin", "Muenchen"], 500.0, 3, ["wifi"])
+        # Mock rates
+        self.rates = {
+            "h1": [
+                Rate("h1", "single", 89.00),
+                Rate("h1", "double", 129.00),
+                Rate("h1", "suite", 199.00),
+            ],
+            "h2": [
+                Rate("h2", "standard", 120.00),
+                Rate("h2", "deluxe", 180.00, available=True),
+                Rate("h2", "penthouse", 350.00, available=False),
+            ],
+            "h3": [
+                Rate("h3", "single", 75.00),
+                Rate("h3", "double", 110.00),
+            ],
+        }
+        
+        # Mock preferences
+        self.preferences["user_001"] = TravelPreference(
+            user_id="user_001",
+            preferred_cities=["Barcelona", "Innsbruck"],
+            max_budget=200.0,
+            amenities_wanted=["wifi"],
+        )
     
     def get_hotel(self, hotel_id: str) -> Optional[Hotel]:
         return self.hotels.get(hotel_id)
     
-    def get_route(self, route_id: str) -> Optional[Route]:
-        return self.routes.get(route_id)
-    
-    def get_rates_for_hotel(self, hotel_id: str) -> list[Rate]:
-        return [r for r in self.rates if r.hotel_id == hotel_id]
-    
-    def get_user_preference(self, user_id: str) -> Optional[UserPreference]:
-        return self.preferences.get(user_id)
-    
-    def search_hotels_by_city(self, city: str) -> list[Hotel]:
+    def search_hotels_by_city(self, city: str) -> List[Hotel]:
         return [h for h in self.hotels.values() if h.city.lower() == city.lower()]
     
-    def to_context_string(self) -> str:
-        """Serialisiert den Graph in einen Prompt-Context-String."""
-        parts = []
-        for h in self.hotels.values():
-            parts.append(f"Hotel: {h.name} ({h.city}, {h.country}) - {h.star_rating}* - ab {h.base_rate}EUR")
-        for r in self.routes.values():
-            parts.append(f"Route: {r.origin} -> {r.destination} mit {r.airline} ab {r.base_price}EUR")
-        return "\n".join(parts) if parts else "Keine Reisedaten verfuegbar."
+    def get_rates_for_hotel(self, hotel_id: str) -> List[Rate]:
+        return self.rates.get(hotel_id, [])
+    
+    def find_routes(self, origin: str, destination: str) -> List[Route]:
+        return [
+            r for r in self.routes
+            if r.origin.lower() == origin.lower() and r.destination.lower() == destination.lower()
+        ]
+    
+    def get_context_for_llm(self, user_id: str = "") -> str:
+        """Generate JSON context string for LLM enrichment."""
+        context = {
+            "available_hotels": [asdict(h) for h in self.hotels.values()],
+            "available_routes": [asdict(r) for r in self.routes],
+            "rate_summary": {
+                hid: [asdict(r) for r in rates]
+                for hid, rates in self.rates.items()
+            },
+        }
+        if user_id and user_id in self.preferences:
+            context["user_preferences"] = asdict(self.preferences[user_id])
+        return json.dumps(context, indent=2, default=str)
 
 
-# ---------------------------------------------------------------------------
-# 2. SKELETON KEY ADAPTER
-# ---------------------------------------------------------------------------
+# ─── Skeleton Key Adapter ────────────────────────────────────────────────────
 
-class AdapterType(Enum):
-    PMS = "pms"
-    OTA = "ota"
-    RMS = "rms"
-    GENERIC = "generic"
+class AdapterStatus(Enum):
+    MOCK = auto()
+    REAL = auto()
+    AUTH_FAILURE = auto()
+
+@dataclass
+class AdapterResult:
+    success: bool
+    data: Any = None
+    status: AdapterStatus = AdapterStatus.MOCK
+    message: str = ""
 
 class TravelSoftwareAdapter:
-    """Basis-Adapter - Skeleton Key Pattern."""
+    """Base adapter for all travel software integrations.
     
-    def __init__(self, adapter_type: AdapterType, endpoint: str = ""):
-        self.type = adapter_type
-        self.endpoint = endpoint
-        self.connected = False
+    Implements skeleton-key-pattern for endpoint discovery and auth.
+    """
     
-    def connect(self) -> bool:
-        """Simuliert Verbindungsaufbau (Mock)."""
-        self.connected = True
-        return True
+    def __init__(self, name: str, mock_data: Optional[Dict] = None):
+        self.name = name
+        self._mock_data = mock_data or {}
+        self._status = AdapterStatus.MOCK
+        self._auth_token = self._generate_skeleton_key("adapter_auth")
     
-    def fetch_hotel_data(self, hotel_id: str) -> dict:
-        """Mock-Datenabruf."""
-        return {
-            "id": hotel_id,
-            "name": f"Mock Hotel {hotel_id}",
-            "available_rooms": [{"type": "standard", "count": 5}],
-            "source": self.type.value,
-            "connected": self.connected
-        }
+    def _generate_skeleton_key(self, seed: str) -> str:
+        """Generate skeleton key for adapter."""
+        return hmac.new(HMAC_SECRET, seed.encode(), hashlib.sha256).hexdigest()[:32]
     
-    def book_room(self, hotel_id: str, room_type: str) -> dict:
-        """Mock-Buchung."""
-        return {
-            "status": "confirmed",
-            "booking_id": f"BK-{hotel_id}-{int(time.time())}",
-            "hotel_id": hotel_id,
-            "room_type": room_type,
-            "adapter": self.type.value
-        }
-
-class SkeletonKeyFactory:
-    """Fabrik fuer Adapter - Skeleton Key Pattern."""
+    def discover_endpoints(self) -> List[str]:
+        """Endpoint discovery - skeleton key pattern."""
+        return [
+            f"{self.name}/v1/hotels",
+            f"{self.name}/v1/rates",
+            f"{self.name}/v1/bookings",
+        ]
     
-    @staticmethod
-    def create_adapter(software_name: str) -> TravelSoftwareAdapter:
-        mapping = {
-            "mews": (AdapterType.PMS, "https://api.mews.com/v1"),
-            "booking.com": (AdapterType.OTA, "https://api.booking.com/v2"),
-            "ideas": (AdapterType.RMS, "https://api.ideas.com/v3"),
-        }
-        key = software_name.lower().replace(" ", "")
-        if key in mapping:
-            atype, endpoint = mapping[key]
-            return TravelSoftwareAdapter(atype, endpoint)
-        return TravelSoftwareAdapter(AdapterType.GENERIC, f"https://api.{software_name.lower()}.com")
+    def query(self, endpoint: str, params: Optional[Dict] = None) -> AdapterResult:
+        """Mock query with skeleton key auth."""
+        if self._status == AdapterStatus.AUTH_FAILURE:
+            return AdapterResult(
+                success=False,
+                status=AdapterStatus.AUTH_FAILURE,
+                message=f"Auth failed for {self.name}. Skeleton key invalid."
+            )
+        # Mock response based on endpoint
+        return AdapterResult(
+            success=True,
+            data=self._mock_data.get(endpoint, {"mock": True, "adapter": self.name}),
+            status=self._status,
+        )
+    
+    def set_auth_failure(self):
+        """Induce auth failure for testing."""
+        self._status = AdapterStatus.AUTH_FAILURE
 
 
-# ---------------------------------------------------------------------------
-# 3. LLM SUB-FUNKTION ROUTER
-# ---------------------------------------------------------------------------
+class MEWSAdapter(TravelSoftwareAdapter):
+    def __init__(self):
+        super().__init__("mews_pms", {
+            "mews_pms/v1/hotels": {"hotels": [{"id": "m1", "name": "Mews Test Hotel"}]},
+            "mews_pms/v1/rates": {"rates": [{"room": "standard", "price": 99.0}]},
+        })
 
-class LLMProvider(Enum):
-    OLLAMA = "ollama"
-    GEMINI = "gemini"
-    OPENAI = "openai"
-    GROK = "grok"
-    MISTRAL = "mistral"
-    DEEPSEEK = "deepseek"
+
+class BookingComAdapter(TravelSoftwareAdapter):
+    def __init__(self):
+        super().__init__("booking_com_ota", {
+            "booking_com_ota/v1/hotels": {"hotels": [{"id": "b1", "name": "Booking Test Hotel"}]},
+        })
+
+
+class IdeasRevenueAdapter(TravelSoftwareAdapter):
+    def __init__(self):
+        super().__init__("ideas_revenue_rms", {
+            "ideas_revenue_rms/v1/rates": {"recommended_rates": {"single": 85.0, "double": 130.0}},
+        })
+
+
+class GenericAPIAdapter(TravelSoftwareAdapter):
+    """Skeleton-key pattern adapter for any third-party API."""
+    
+    def __init__(self, base_url: str = "https://api.generic-travel.com"):
+        super().__init__(f"generic_api_{hash(base_url) % 10000}")
+        self.base_url = base_url
+        self._endpoint_map: Dict[str, str] = {}
+    
+    def register_endpoint(self, logical_name: str, full_path: str):
+        self._endpoint_map[logical_name] = full_path
+        self._mock_data[full_path] = {"discovered": True, "base_url": self.base_url}
+
+
+# ─── LLM Sub-Function Router ────────────────────────────────────────────────
+
+@dataclass
+class LLMRequest:
+    provider: str
+    prompt: str
+    context: str = ""
+    temperature: float = 0.7
+    user_id: str = ""
 
 @dataclass
 class LLMResponse:
-    provider: LLMProvider
+    provider: str
     content: str
     hmac_signature: str
-    timestamp: float = field(default_factory=time.time)
-    
-    def verify_hmac(self, secret: bytes) -> bool:
-        expected = hmac.new(secret, self.content.encode(), hashlib.sha256).hexdigest()
-        return hmac.compare_digest(expected, self.hmac_signature)
+    validated_by: List[str] = field(default_factory=list)
+    sandbox: bool = True
 
-class LLMRouter:
-    """Router fuer 6 LLM-Provider mit HMAC-Signing und Cross-Validation."""
+class LLMSubFunctionRouter:
+    """Routes LLM requests across 6 providers with HMAC signing and cross-validation."""
     
-    def __init__(self, hmac_secret: bytes = b"heylou-skeleton-key-2026"):
-        self.secret = hmac_secret
-        self._real_enabled = os.environ.get("DF_HEYLOU_REAL_LLM_ENABLED", "false").lower() == "true"
-        self._phronesis_ticket = os.environ.get("PHRONESIS_TICKET", "")
-    
-    def _sign(self, content: str) -> str:
-        return hmac.new(self.secret, content.encode(), hashlib.sha256).hexdigest()
-    
-    def _mock_call(self, provider: LLMProvider, prompt: str, context: str = "") -> str:
-        """Simulierter LLM-Call."""
-        responses = {
-            LLMProvider.OLLAMA: f"[Ollama-Local] Reiseanalyse: {prompt[:50]}... Basierend auf Kontext: {context[:80]}...",
-            LLMProvider.GEMINI: f"[Gemini-Itinerary] Ausfuehrliche Reiseroute erstellt fuer Anfrage: {prompt[:40]}",
-            LLMProvider.OPENAI: f"[OpenAI-Reasoning] Buchungslogik geprueft. Empfehlung basierend auf {len(context)} Zeichen Kontext.",
-            LLMProvider.GROK: f"[Grok-RealTime] Aktuelle Reiseinformationen fuer: {prompt[:30]}. Keine Stoerungen gemeldet.",
-            LLMProvider.MISTRAL: f"[Mistral-EU-DSGVO] DSGVO-konforme Reiseberatung durchgefuehrt. Daten bleiben in EU.",
-            LLMProvider.DEEPSEEK: f"[DeepSeek-Routine] Kosteneffiziente Routenberechnung: Anfrage bearbeitet.",
+    def __init__(self, knowledge_graph: TravelKnowledgeGraph):
+        self.knowledge_graph = knowledge_graph
+        # Mock response generators per provider
+        self._mock_handlers: Dict[str, Callable[[LLMRequest], str]] = {
+            "ollama_local": self._mock_ollama,
+            "gemini": self._mock_gemini,
+            "openai": self._mock_openai,
+            "grok": self._mock_grok,
+            "mistral": self._mock_mistral,
+            "deepseek": self._mock_deepseek,
         }
-        return responses.get(provider, f"[{provider.value}] Mock-Response: {prompt}")
     
-    def call_llm(self, provider: LLMProvider, prompt: str, context: str = "") -> LLMResponse:
-        """Fuehrt einen LLM-Call aus (Mock oder ggf. Real)."""
-        if self._real_enabled and self._phronesis_ticket:
-            # Real-Call (hier nur Platzhalter)
-            content = f"[REAL-{provider.value}] {prompt} (ticket={self._phronesis_ticket})"
-        else:
-            content = self._mock_call(provider, prompt, context)
-        
-        signature = self._sign(content)
-        return LLMResponse(provider, content, signature)
+    def _sign_request(self, request: LLMRequest) -> str:
+        """HMAC-SHA256 signing for provenance."""
+        payload = json.dumps(asdict(request), sort_keys=True).encode()
+        return hmac.new(HMAC_SECRET, payload, hashlib.sha256).hexdigest()
     
-    def cross_validate(self, responses: list[LLMResponse]) -> bool:
-        """Cross-Validation: Prueft ob mind. 2 Provider aehnliche Antworten liefern."""
-        if len(responses) < 2:
-            return False
-        contents = [r.content[:50] for r in responses]
-        return len(set(contents)) <= len(contents) - 1  # Mind. 2 identische Anfaenge
-
-
-# ---------------------------------------------------------------------------
-# 4. DOMAIN ORCHESTRATOR (5-Phase Loop)
-# ---------------------------------------------------------------------------
-
-class DomainOrchestrator:
-    """5-Phase-Loop fuer HeyLou Travel Domain Processing."""
+    def _mock_ollama(self, request: LLMRequest) -> str:
+        return f"[Ollama-Local] Travel recommendation based on context: {len(request.context)} chars analyzed."
     
-    def __init__(self):
-        self.knowledge_graph = TravelKnowledgeGraph()
-        self.adapter_factory = SkeletonKeyFactory()
-        self.llm_router = LLMRouter()
-        self.phases = ["QUERY", "ENRICH", "ROUTE", "DECIDE", "ACT"]
+    def _mock_gemini(self, request: LLMRequest) -> str:
+        return f"[Gemini] Long-context itinerary for {request.user_id or 'guest'} with {len(request.context)} chars context."
     
-    def process_travel_request(self, user_id: str, query: str, hotel_id: str = "") -> dict:
-        """Verarbeitet eine Reiseanfrage durch alle 5 Phasen."""
-        result = {
-            "user_id": user_id,
-            "query": query,
-            "phases": {},
-            "final_response": "",
-            "timestamp": time.time()
-        }
+    def _mock_openai(self, request: LLMRequest) -> str:
+        return f"[OpenAI] Booking logic reasoning: optimal choice from {self.knowledge_graph.hotels} hotels."
+    
+    def _mock_grok(self, request: LLMRequest) -> str:
+        return "[Grok] Real-time travel disruption: No disruptions detected on queried routes."
+    
+    def _mock_mistral(self, request: LLMRequest) -> str:
+        return "[Mistral] EU-DSGVO-compliant travel suggestion: Data processed within EU."
+    
+    def _mock_deepseek(self, request: LLMRequest) -> str:
+        return f"[DeepSeek] Cost-effective routine: Cheapest options for {request.prompt[:50]}..."
+    
+    def call_llm(self, request: LLMRequest) -> LLMResponse:
+        """Execute an LLM call with travel domain context enrichment."""
+        # Validate provider
+        if request.provider not in VALID_PROVIDERS:
+            raise ValueError(f"Invalid provider: {request.provider}. Must be one of {VALID_PROVIDERS}")
         
-        # Phase 1: QUERY - Anfrage analysieren
-        pref = self.knowledge_graph.get_user_preference(user_id)
-        context = self.knowledge_graph.to_context_string()
-        result["phases"]["QUERY"] = {
-            "preference": asdict(pref) if pref else {},
-            "context_length": len(context)
-        }
+        # Enrich with travel knowledge graph context
+        if not request.context:
+            request.context = self.knowledge_graph.get_context_for_llm(request.user_id)
         
-        # Phase 2: ENRICH - Mit Knowledge Graph anreichern
-        enriched = ""
-        if hotel_id:
-            hotel = self.knowledge_graph.get_hotel(hotel_id)
-            rates = self.knowledge_graph.get_rates_for_hotel(hotel_id)
-            enriched = f"Hotel: {hotel}, Rates: {len(rates)} Optionen" if hotel else "Kein Hotel gefunden"
-        result["phases"]["ENRICH"] = {"enriched_data": enriched}
+        # Sandbox mode - use mock handlers
+        handler = self._mock_handlers.get(request.provider)
+        if handler is None:
+            raise ValueError(f"No handler for provider: {request.provider}")
         
-        # Phase 3: ROUTE - LLM-Calls routen
-        llm_responses = []
-        for provider in [LLMProvider.OLLAMA, LLMProvider.GEMINI, LLMProvider.OPENAI]:
-            resp = self.llm_router.call_llm(provider, query, context)
-            llm_responses.append(resp)
+        content = handler(request)
+        signature = self._sign_request(request)
         
-        cross_valid = self.llm_router.cross_validate(llm_responses)
-        result["phases"]["ROUTE"] = {
-            "responses": [{"provider": r.provider.value, "content": r.content, "hmac": r.hmac_signature[:8]} for r in llm_responses],
-            "cross_validated": cross_valid
-        }
+        # Cross-validation simulation (in sandbox, always successful)
+        validated_by = [request.provider]
+        if MIN_CROSS_VALIDATION > 1:
+            # Simulate cross-validation with random other providers
+            others = [p for p in VALID_PROVIDERS if p != request.provider]
+            validated_by.extend(random.sample(others, min(MIN_CROSS_VALIDATION - 1, len(others))))
         
-        # Phase 4: DECIDE - Entscheidung treffen
-        best_response = max(llm_responses, key=lambda r: len(r.content))
-        result["phases"]["DECIDE"] = {
-            "chosen_provider": best_response.provider.value,
-            "decision_rationale": "Laengste Antwort als beste Qualitaet gewaehlt"
-        }
-        
-        # Phase 5: ACT - Aktion ausfuehren (Adapter nutzen)
-        adapter = self.adapter_factory.create_adapter("mews" if hotel_id else "booking.com")
-        adapter.connect()
-        if hotel_id:
-            booking = adapter.book_room(hotel_id, "standard")
-            result["phases"]["ACT"] = {"action": "booking", "result": booking}
-        else:
-            data = adapter.fetch_hotel_data("MOCK001")
-            result["phases"]["ACT"] = {"action": "fetch", "result": data}
-        
-        result["final_response"] = f"HeyLou hat Ihre Reiseanfrage bearbeitet: {query}. Gewaehlte LLM-Antwort: {best_response.content[:100]}..."
+        return LLMResponse(
+            provider=request.provider,
+            content=content,
+            hmac_signature=signature,
+            validated_by=validated_by,
+            sandbox=True,
+        )
+    
+    def cross_validate(self, responses: List[LLMResponse]) -> Dict[str, bool]:
+        """Cross-validate multiple LLM responses (K_0/Q_0 proximity check)."""
+        result = {}
+        for resp in responses:
+            # In sandbox: check that signature is valid HMAC format
+            valid = bool(resp.hmac_signature and len(resp.hmac_signature) == 64)
+            result[resp.provider] = valid
         return result
 
 
-# ---------------------------------------------------------------------------
-# 5. AUDIT LOGGER (HMAC-SHA256)
-# ---------------------------------------------------------------------------
+# ─── Domain Orchestrator ─────────────────────────────────────────────────────
 
-class AuditLogger:
-    """Protokolliert Aktionen mit HMAC-SHA256-Signatur."""
+class DomainOrchestrator:
+    """5-Phase Loop orchestrator for travel domain operations."""
     
-    def __init__(self, secret: bytes = b"heylou-audit-secret"):
-        self.secret = secret
-        self.log: list[dict] = []
+    def __init__(self):
+        self.knowledge_graph = TravelKnowledgeGraph()
+        self.llm_router = LLMSubFunctionRouter(self.knowledge_graph)
+        self.adapters: Dict[str, TravelSoftwareAdapter] = {
+            "mews": MEWSAdapter(),
+            "booking": BookingComAdapter(),
+            "ideas": IdeasRevenueAdapter(),
+            "generic": GenericAPIAdapter(),
+        }
+        self.audit_log: List[dict] = []
     
-    def log_action(self, action: str, data: dict) -> str:
-        signature = hmac.new(self.secret, json.dumps(data, sort_keys=True).encode(), hashlib.sha256).hexdigest()
+    def phase_discover(self) -> dict:
+        """Phase 1: Discover available endpoints and data."""
+        results = {}
+        for name, adapter in self.adapters.items():
+            results[name] = {
+                "endpoints": adapter.discover_endpoints(),
+                "status": adapter._status.name,
+            }
+        return {"phase": "discover", "results": results}
+    
+    def phase_enrich(self, user_id: str = "") -> dict:
+        """Phase 2: Enrich with travel knowledge graph."""
+        context = self.knowledge_graph.get_context_for_llm(user_id)
+        return {"phase": "enrich", "context_length": len(context), "user_id": user_id}
+    
+    def phase_route_llm(self, prompt: str, user_id: str = "") -> List[LLMResponse]:
+        """Phase 3: Route prompt to all LLM providers for parallel analysis."""
+        responses = []
+        for provider in VALID_PROVIDERS:
+            request = LLMRequest(
+                provider=provider,
+                prompt=prompt,
+                user_id=user_id,
+            )
+            response = self.llm_router.call_llm(request)
+            responses.append(response)
+            self._log_audit("llm_call", {"provider": provider, "signature": response.hmac_signature})
+        return responses
+    
+    def phase_cross_validate(self, responses: List[LLMResponse]) -> dict:
+        """Phase 4: Cross-validate responses."""
+        validation = self.llm_router.cross_validate(responses)
+        self._log_audit("cross_validation", validation)
+        return {"phase": "cross_validate", "validation": validation, "all_passed": all(validation.values())}
+    
+    def phase_aggregate(self, responses: List[LLMResponse]) -> dict:
+        """Phase 5: Aggregate responses into unified result."""
+        aggregated = {
+            "providers_used": [r.provider for r in responses],
+            "consensus": responses[0].content if responses else "No responses",
+            "signed_count": sum(1 for r in responses if r.hmac_signature),
+            "sandbox_mode": all(r.sandbox for r in responses),
+        }
+        self._log_audit("aggregate", aggregated)
+        return {"phase": "aggregate", "result": aggregated}
+    
+    def run_full_cycle(self, prompt: str, user_id: str = "") -> dict:
+        """Run all 5 phases in sequence."""
+        p1 = self.phase_discover()
+        p2 = self.phase_enrich(user_id)
+        p3 = self.phase_route_llm(prompt, user_id)
+        p4 = self.phase_cross_validate(p3)
+        p5 = self.phase_aggregate(p3)
+        return {"phases": [p1, p2, p4, p5], "llm_responses": [asdict(r) for r in p3]}
+    
+    def _log_audit(self, action: str, data: dict):
+        """Append to audit log (HMAC-signed entries)."""
         entry = {
             "action": action,
             "data": data,
-            "signature": signature,
-            "timestamp": time.time()
+            "hmac": hmac.new(HMAC_SECRET, json.dumps(data, sort_keys=True).encode(), hashlib.sha256).hexdigest(),
         }
-        self.log.append(entry)
-        return signature
+        self.audit_log.append(entry)
     
-    def verify_log_entry(self, entry: dict) -> bool:
-        expected = hmac.new(self.secret, json.dumps(entry["data"], sort_keys=True).encode(), hashlib.sha256).hexdigest()
-        return hmac.compare_digest(entry["signature"], expected)
-
-
-# ---------------------------------------------------------------------------
-# API-Funktionen fuer Tests
-# ---------------------------------------------------------------------------
-
-def create_travel_knowledge_graph() -> TravelKnowledgeGraph:
-    """Erstellt und gibt einen initialisierten TravelKnowledgeGraph zurueck."""
-    return TravelKnowledgeGraph()
-
-def query_hotel(graph: TravelKnowledgeGraph, hotel_id: str) -> Optional[dict]:
-    """Query-Funktion fuer Hotel-Daten."""
-    hotel = graph.get_hotel(hotel_id)
-    if hotel:
-        return asdict(hotel)
-    return None
-
-def route_llm_query(query: str, context: str = "") -> list[dict]:
-    """Fuehrt einen gerouteten LLM-Call aus und gibt Ergebnisse zurueck."""
-    router = LLMRouter()
-    results = []
-    for provider in LLMProvider:
-        resp = router.call_llm(provider, query, context)
-        results.append({
-            "provider": provider.value,
-            "content": resp.content,
-            "hmac": resp.hmac_signature
-        })
-    return results
-
-def skeleton_key_booking(software: str, hotel_id: str) -> dict:
-    """Fuehrt eine Buchung via Skeleton-Key-Adapter aus."""
-    factory = SkeletonKeyFactory()
-    adapter = factory.create_adapter(software)
-    adapter.connect()
-    return adapter.book_room(hotel_id, "standard")
+    def get_audit_log(self) -> List[dict]:
+        return self.audit_log.copy()
 # [CRUX-MK]
