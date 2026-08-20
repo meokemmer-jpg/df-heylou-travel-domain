@@ -1,6 +1,6 @@
 {
   "df": "df-heylou-travel-domain",
-  "ts": "2026-08-19T02:01:22.504778+00:00",
+  "ts": "2026-08-20T02:08:19.177035+00:00",
   "crux": "[CRUX-MK]",
   "winner_provider": "incumbent-kept",
   "winner_tests_passed": true,
@@ -30,13 +30,13 @@
     },
     {
       "provider": "local",
-      "parse_ok": false,
+      "parse_ok": true,
       "tests_passed": false,
-      "n_tests": 0,
-      "n_assert": 0,
+      "n_tests": 26,
+      "n_assert": 58,
       "coverage_pct": null,
-      "q": null,
-      "error": "module parse: closing parenthesis ']' does not match opening parenthesis '{' (<unknown>, line "
+      "q": 1.0,
+      "error": null
     }
   ],
   "canonical_verify": {
