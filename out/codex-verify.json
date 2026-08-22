@@ -1,0 +1,6 @@
+{
+  "verdict": "HOLDS",
+  "reason": "Der Test nutzt eine echte file-backed SQLite-DB, ruft den Kernel mit zwei adversarial entgegengesetzten TravelIntents auf und verlangt unterschiedliche signierte Empfehlungen statt nur Mock-/Konstantenvergleiche.",
+  "ts": "2026-08-22T00:11:11.681934+00:00",
+  "attempts": 1
+}

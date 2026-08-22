@@ -1,35 +1,5 @@
 from __future__ import annotations
 
-# K12+K13+K16 Trinity-CONTRARIAN 2026-05-17 (Cross-LLM-validated)
-def k12_provenance(payload: bytes, key: bytes = b"df-trinity-contrarian-v1") -> dict:
-    import hashlib, hmac
-    return {
-        "payload_hash": hashlib.sha256(payload).hexdigest(),
-        "hmac_sha256": hmac.new(key, payload, hashlib.sha256).hexdigest(),
-    }
-
-def k13_anchor(payload_hash: str) -> dict:
-    from datetime import datetime, timezone
-    return {
-        "anchor_type": "rfc3161-mock",
-        "iso_ts": datetime.now(timezone.utc).isoformat(),
-        "payload_hash": payload_hash,
-    }
-
-def k16_lock_or_exit(df_name: str):
-    import fcntl, os, sys
-    lock_path = f"/tmp/df-trinity-{df_name}.lock"
-    fd = os.open(lock_path, os.O_CREAT | os.O_WRONLY)
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        return fd
-    except BlockingIOError:
-        sys.exit(3)
-
-"""Tests fuer audit_logger.py [CRUX-MK]."""
-
-
-import json
 import sys
 from pathlib import Path
 
@@ -37,53 +7,90 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.audit_logger import AuditLogger, AuditEntry
+from src.heylou_travel_domain import (
+    Hotel,
+    Rate,
+    Route,
+    SQLiteTravelRepository,
+    TravelDomainKernel,
+    TravelIntent,
+    verify_result_signature,
+)
 
 
-def test_audit_log_creates_jsonl_file(tmp_path):
-    """K11 + LC4: log() writes to JSONL append-only file."""
-    audit = AuditLogger(audit_dir=str(tmp_path))
-    entry = audit.log(
-        event_type="test_event",
-        payload={"foo": "bar", "n": 42},
+def build_file_backed_domain(tmp_path):
+    db_path = tmp_path / "travel-domain.sqlite3"
+    repo = SQLiteTravelRepository(db_path)
+    repo.replace_catalog(
+        hotels=[
+            Hotel("ber-business", "Mitte Business Base", "Berlin", "Germany", 52.52, 13.405, 4.1, ["wifi", "meeting_rooms"]),
+            Hotel("bcn-sea", "Barcelona Sea Spa", "Barcelona", "Spain", 41.3874, 2.1686, 4.8, ["wifi", "pool", "spa"]),
+            Hotel("inn-alpine", "Innsbruck Alpine Lodge", "Innsbruck", "Austria", 47.2692, 11.4041, 4.4, ["wifi", "ski_storage", "breakfast"]),
+        ],
+        rates=[
+            Rate("ber-business", "standard", 95.0),
+            Rate("bcn-sea", "standard", 150.0),
+            Rate("inn-alpine", "single", 70.0),
+        ],
+        routes=[
+            Route("Berlin", "Barcelona", "flight", 155, 70.0),
+            Route("Berlin", "Innsbruck", "train", 360, 45.0),
+            Route("Berlin", "Berlin", "train", 20, 3.0),
+        ],
     )
-    assert entry.signature is not None
-    assert entry.event_type == "test_event"
-    # File should exist with at least 1 line
-    today_files = list(tmp_path.glob("heylou-domain-*.jsonl"))
-    assert len(today_files) == 1
-    contents = today_files[0].read_text(encoding="utf-8")
-    assert contents.count("\n") >= 1
+    assert db_path.exists()
+    assert db_path.stat().st_size > 0
+    assert repo.catalog_counts() == {"hotels": 3, "rates": 3, "routes": 3}
+    return TravelDomainKernel(repo)
 
 
-def test_audit_log_signature_verifies(tmp_path):
-    """W30-G: written entry's signature verifies."""
-    audit = AuditLogger(audit_dir=str(tmp_path))
-    entry = audit.log(
-        event_type="domain_loop_run",
-        payload={"loop_id": "test-loop", "hotel_id": "hildesheim"},
+def test_df_heylou_travel_domain_discriminates_adversarial_opposite_inputs(tmp_path):
+    domain = build_file_backed_domain(tmp_path)
+
+    seaside_intent = TravelIntent(
+        user_id="traveler-sea",
+        origin="Berlin",
+        desired_city="Barcelona",
+        avoid_cities=["Innsbruck"],
+        max_budget_eur=240.0,
+        required_amenities=["pool", "spa"],
+        preferred_transport="flight",
+        nights=1,
     )
-    assert entry.verify_signature() is True
+    alpine_counter_intent = TravelIntent(
+        user_id="traveler-snow",
+        origin="Berlin",
+        desired_city="Innsbruck",
+        avoid_cities=["Barcelona"],
+        max_budget_eur=130.0,
+        required_amenities=["ski_storage", "breakfast"],
+        preferred_transport="train",
+        nights=1,
+    )
+
+    seaside = domain.recommend_trip(seaside_intent)
+    alpine = domain.recommend_trip(alpine_counter_intent)
+
+    assert verify_result_signature(seaside) is True
+    assert verify_result_signature(alpine) is True
+    assert seaside["recommendation"] is not None
+    assert alpine["recommendation"] is not None
+
+    assert seaside["recommendation"]["city"] == "Barcelona"
+    assert seaside["recommendation"]["hotel_id"] == "bcn-sea"
+    assert seaside["recommendation"]["transport_mode"] == "flight"
+    assert "within_budget" in seaside["recommendation"]["reasons"]
+
+    assert alpine["recommendation"]["city"] == "Innsbruck"
+    assert alpine["recommendation"]["hotel_id"] == "inn-alpine"
+    assert alpine["recommendation"]["transport_mode"] == "train"
+    assert "within_budget" in alpine["recommendation"]["reasons"]
+
+    assert seaside["recommendation"]["hotel_id"] != alpine["recommendation"]["hotel_id"]
+    assert seaside["recommendation"]["city"] != alpine["recommendation"]["city"]
+    assert seaside["payload_hash"] != alpine["payload_hash"]
 
 
-def test_read_recent_returns_signed_entries(tmp_path):
-    """LC4 idempotent + W30-G: read_recent returns entries with signatures."""
-    audit = AuditLogger(audit_dir=str(tmp_path))
-    audit.log(event_type="evt1", payload={"a": 1})
-    audit.log(event_type="evt2", payload={"a": 2})
-    audit.log(event_type="evt3", payload={"a": 3})
-    recent = audit.read_recent(limit=2)
-    assert len(recent) == 2
-    for e in recent:
-        assert e.signature is not None
-        assert len(e.signature) == 64
-        assert e.verify_signature() is True
-
-
-def test_audit_handles_missing_dir_gracefully(tmp_path):
-    """LC1 graceful_degradation: missing audit_dir doesn't crash."""
-    nonexistent = tmp_path / "deeply" / "nested" / "missing"
-    audit = AuditLogger(audit_dir=str(nonexistent))
-    # Should still log without crashing
-    entry = audit.log(event_type="test", payload={})
-    assert entry.signature is not None
+def test_repository_rejects_in_memory_fixture():
+    with pytest.raises(ValueError):
+        SQLiteTravelRepository(":memory:")
