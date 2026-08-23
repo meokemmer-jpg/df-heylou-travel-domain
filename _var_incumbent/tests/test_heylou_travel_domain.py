@@ -1,439 +1,311 @@
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 # [CRUX-MK]
-"""test_heylou_travel_domain.py - Comprehensive tests for the HeyLou Travel Domain kernel.
-
-Usage: pytest test_heylou_travel_domain.py -v
-"""
-import json
-import hashlib
-import hmac
-from datetime import datetime
-
 from heylou_travel_domain import (
-    HMAC_SECRET,
-    VALID_PROVIDERS,
     TravelKnowledgeGraph,
-    TravelSoftwareAdapter,
-    MEWSAdapter,
-    BookingComAdapter,
-    IdeasRevenueAdapter,
-    GenericAPIAdapter,
-    AdapterStatus,
-    LLMRequest,
-    LLMResponse,
-    LLMSubFunctionRouter,
-    DomainOrchestrator,
-    Hotel,
-    Route,
-    Rate,
-    TravelPreference,
+    Hotel, Route, TravelPreference,
+    MEWSAdapter, BookingComAdapter, IdeasRevenueAdapter, GenericAPIAdapter,
+    LLMRouter, LLMProvider, LLMResponse,
+    TravelDomainOrchestrator,
+    create_heylou_orchestrator,
+    quick_search,
+    cross_validate_travel_recommendation,
+    health_check,
+    DF_HEYLOU_REAL_LLM_ENABLED
 )
-
+import json
 
 class TestTravelKnowledgeGraph:
-    """Test the in-memory knowledge graph."""
-
-    def test_initialization_creates_mock_data(self):
-        kg = TravelKnowledgeGraph()
-        assert len(kg.hotels) == 4
-        assert len(kg.routes) == 4
-        assert len(kg.rates) == 3
-
-    def test_get_hotel_returns_correct_hotel(self):
-        kg = TravelKnowledgeGraph()
-        hotel = kg.get_hotel("h1")
+    def setup_method(self):
+        self.graph = TravelKnowledgeGraph()
+    
+    def test_loads_mock_data(self):
+        assert len(self.graph.hotels) == 5, f"Expected 5 hotels, got {len(self.graph.hotels)}"
+        assert len(self.graph.routes) == 5, f"Expected 5 routes, got {len(self.graph.routes)}"
+        assert len(self.graph.preferences) == 2, f"Expected 2 preferences, got {len(self.graph.preferences)}"
+    
+    def test_get_hotel(self):
+        hotel = self.graph.get_hotel("H-001")
         assert hotel is not None
-        assert hotel.name == "Grand Central"
+        assert hotel.name == "Grand Palace Hotel"
         assert hotel.city == "Berlin"
-
-    def test_get_hotel_returns_none_for_invalid_id(self):
-        kg = TravelKnowledgeGraph()
-        assert kg.get_hotel("nonexistent") is None
-
-    def test_search_hotels_by_city_case_insensitive(self):
-        kg = TravelKnowledgeGraph()
-        hotels = kg.search_hotels_by_city("berlin")
-        assert len(hotels) == 1
-        assert hotels[0].name == "Grand Central"
-
-    def test_search_hotels_by_city_partial_match(self):
-        kg = TravelKnowledgeGraph()
-        hotels = kg.search_hotels_by_city("Barcelona")
-        assert len(hotels) == 1
-        assert hotels[0].id == "h2"
-
-    def test_get_rates_for_hotel_returns_list(self):
-        kg = TravelKnowledgeGraph()
-        rates = kg.get_rates_for_hotel("h1")
-        assert len(rates) == 3
-        assert all(isinstance(r, Rate) for r in rates)
-
-    def test_get_rates_for_hotel_invalid_id_returns_empty(self):
-        kg = TravelKnowledgeGraph()
-        assert kg.get_rates_for_hotel("invalid") == []
-
-    def test_find_routes_exact_match(self):
-        kg = TravelKnowledgeGraph()
-        routes = kg.find_routes("Berlin", "Barcelona")
+        assert hotel.stars == 5
+        assert hotel.base_rate == 250.00
+    
+    def test_get_hotel_not_found(self):
+        assert self.graph.get_hotel("INVALID") is None
+    
+    def test_search_hotels_by_city(self):
+        berlin_hotels = self.graph.search_hotels(city="Berlin")
+        assert len(berlin_hotels) == 2
+        assert all(h.city == "Berlin" for h in berlin_hotels)
+    
+    def test_search_hotels_by_stars(self):
+        luxury = self.graph.search_hotels(min_stars=4)
+        assert len(luxury) == 3  # H-001 (5), H-003 (4), H-004 (4)
+        assert all(h.stars >= 4 for h in luxury)
+    
+    def test_search_hotels_by_budget(self):
+        cheap = self.graph.search_hotels(max_budget=100.0)
+        assert len(cheap) >= 2  # H-002 (89), H-005 (45)
+        assert all(h.base_rate <= 100.0 for h in cheap)
+    
+    def test_find_routes(self):
+        routes = self.graph.find_routes("Berlin", "Zürich")
         assert len(routes) == 1
-        assert routes[0].mode == "flight"
-        assert routes[0].price_eur == 89.99
-
+        assert routes[0].id == "R-001"
+        assert routes[0].duration_minutes == 90
+    
     def test_find_routes_case_insensitive(self):
-        kg = TravelKnowledgeGraph()
-        routes = kg.find_routes("berlin", "barcelona")
+        routes = self.graph.find_routes("berlin", "zürich")
         assert len(routes) == 1
-
-    def test_find_routes_no_match_returns_empty(self):
-        kg = TravelKnowledgeGraph()
-        assert kg.find_routes("Paris", "Tokyo") == []
-
-    def test_get_context_for_llm_returns_json_string(self):
-        kg = TravelKnowledgeGraph()
-        context = kg.get_context_for_llm()
-        parsed = json.loads(context)
-        assert "available_hotels" in parsed
-        assert "available_routes" in parsed
-        assert "rate_summary" in parsed
-
-    def test_get_context_includes_user_preferences(self):
-        kg = TravelKnowledgeGraph()
-        context = kg.get_context_for_llm("user_001")
-        parsed = json.loads(context)
-        assert "user_preferences" in parsed
-        assert parsed["user_preferences"]["user_id"] == "user_001"
-        assert parsed["user_preferences"]["max_budget"] == 200.0
+    
+    def test_get_preference(self):
+        pref = self.graph.get_preference("U-001")
+        assert pref is not None
+        assert pref.min_stars == 3
+        assert pref.max_budget == 500.00
 
 
-class TestSkeletonKeyAdapter:
-    """Test the TravelSoftwareAdapter and its implementations."""
-
-    def test_adapter_initialization_generates_skeleton_key(self):
-        adapter = TravelSoftwareAdapter("test_adapter")
-        assert len(adapter._auth_token) == 32
-
-    def test_adapter_initial_status_is_mock(self):
-        adapter = TravelSoftwareAdapter("test")
-        assert adapter._status == AdapterStatus.MOCK
-
-    def test_discover_endpoints_returns_list(self):
-        adapter = TravelSoftwareAdapter("test_api")
-        endpoints = adapter.discover_endpoints()
-        assert len(endpoints) == 3
-        assert all("test_api" in ep for ep in endpoints)
-
-    def test_query_returns_successful_mock_result(self):
-        adapter = TravelSoftwareAdapter("test", {"test/v1/hotels": {"result": "ok"}})
-        result = adapter.query("test/v1/hotels")
-        assert result.success is True
-        assert result.status == AdapterStatus.MOCK
-        assert result.data == {"result": "ok"}
-
-    def test_query_on_auth_failure_returns_error(self):
-        adapter = TravelSoftwareAdapter("test")
-        adapter.set_auth_failure()
-        result = adapter.query("any/endpoint")
-        assert result.success is False
-        assert result.status == AdapterStatus.AUTH_FAILURE
-        assert "Auth failed" in result.message
-
-    def test_mews_adapter_has_correct_name(self):
-        adapter = MEWSAdapter()
-        assert "mews" in adapter.name
-        endpoints = adapter.discover_endpoints()
-        assert any("mews_pms" in ep for ep in endpoints)
-
-    def test_booking_com_adapter_has_correct_data(self):
-        adapter = BookingComAdapter()
-        result = adapter.query("booking_com_ota/v1/hotels")
-        assert result.success is True
-        assert "Booking Test Hotel" in str(result.data)
-
-    def test_ideas_revenue_adapter_returns_rates(self):
-        adapter = IdeasRevenueAdapter()
-        result = adapter.query("ideas_revenue_rms/v1/rates")
-        assert result.success is True
-        assert "recommended_rates" in result.data
-
-    def test_generic_api_adapter_endpoint_registration(self):
-        adapter = GenericAPIAdapter("https://test.api.com")
-        adapter.register_endpoint("search", "https://test.api.com/v2/search")
-        result = adapter.query("https://test.api.com/v2/search")
-        assert result.success is True
-        assert result.data["discovered"] is True
-
-    def test_generic_api_adapter_empty_registry(self):
-        adapter = GenericAPIAdapter()
-        result = adapter.query("nonexistent")
-        assert result.success is True  # Mock mode returns success with empty data
+class TestAdapters:
+    def setup_method(self):
+        self.mews = MEWSAdapter()
+        self.booking = BookingComAdapter()
+        self.ideas = IdeasRevenueAdapter()
+        self.generic = GenericAPIAdapter()
+    
+    def test_mews_connect_and_search(self):
+        assert self.mews.connect()
+        result = self.mews.search({"hotel_id": "H-001", "check_in": "2026-08-01"})
+        assert result["status"] == "available"
+        assert "Single" in result["room_types"]
+    
+    def test_mews_book(self):
+        result = self.mews.book("H-001", {"room_type": "Double", "guest_name": "Test User", "total_amount": 500.0})
+        assert result["status"] == "confirmed"
+        assert result["booking_id"].startswith("MEWS-BK-")
+    
+    def test_mews_cancel(self):
+        book = self.mews.book("H-001", {"room_type": "Single"})
+        cancel = self.mews.cancel(book["booking_id"])
+        assert cancel["status"] == "cancelled"
+    
+    def test_booking_com_search(self):
+        assert self.booking.connect()
+        result = self.booking.search({"city": "Berlin", "guests": 2})
+        assert result["status"] == "success"
+        assert len(result["properties"]) == 2
+    
+    def test_booking_com_book(self):
+        result = self.booking.book("P001", {"room_type": "Standard", "total_amount": 150.0})
+        assert result["status"] == "booked"
+        assert result["booking_id"].startswith("BC-BK-")
+    
+    def test_ideas_revenue_search(self):
+        assert self.ideas.connect()
+        result = self.ideas.search({"hotel_id": "H-001", "date_from": "2026-08-01"})
+        assert result["status"] == "success"
+        assert "rate_recommendations" in result
+        assert result["rate_recommendations"]["Double"]["recommended"] > result["rate_recommendations"]["Double"]["current"]
+    
+    def test_generic_api_discovery(self):
+        endpoints = self.generic.discover_endpoints()
+        assert len(endpoints) == 4
+        assert "search" in endpoints
+        assert "book" in endpoints
+    
+    def test_generic_api_search(self):
+        result = self.generic.search({"test": "data"})
+        assert result["status"] == "ok"
 
 
-class TestLLMSubFunctionRouter:
-    """Test the LLM routing and cross-validation."""
-
-    def test_router_initialization_has_all_providers(self):
-        kg = TravelKnowledgeGraph()
-        router = LLMSubFunctionRouter(kg)
-        assert set(router._mock_handlers.keys()) == set(VALID_PROVIDERS)
-
-    def test_call_llm_returns_llm_response(self):
-        kg = TravelKnowledgeGraph()
-        router = LLMSubFunctionRouter(kg)
-        request = LLMRequest(provider="ollama_local", prompt="Find cheap hotels")
-        response = router.call_llm(request)
-        assert isinstance(response, LLMResponse)
-        assert response.provider == "ollama_local"
-        assert response.sandbox is True
-
-    def test_call_llm_includes_hmac_signature(self):
-        kg = TravelKnowledgeGraph()
-        router = LLMSubFunctionRouter(kg)
-        request = LLMRequest(provider="deepseek", prompt="Test")
-        response = router.call_llm(request)
-        assert len(response.hmac_signature) == 64
-        # Verify it's a valid hex string
-        int(response.hmac_signature, 16)
-
-    def test_call_llm_enriches_with_context(self):
-        kg = TravelKnowledgeGraph()
-        router = LLMSubFunctionRouter(kg)
-        request = LLMRequest(provider="gemini", prompt="Plan trip", user_id="user_001")
-        response = router.call_llm(request)
-        assert "user_001" in response.content or "guest" not in response.content
-
-    def test_call_llm_without_context_auto_enriches(self):
-        kg = TravelKnowledgeGraph()
-        router = LLMSubFunctionRouter(kg)
-        request = LLMRequest(provider="openai", prompt="Hotels in Berlin")
-        response = router.call_llm(request)
-        assert "[OpenAI]" in response.content
-        assert "hotels" in response.content.lower()
-
-    def test_call_llm_cross_validates(self):
-        kg = TravelKnowledgeGraph()
-        router = LLMSubFunctionRouter(kg)
-        request = LLMRequest(provider="mistral", prompt="EU travel")
-        response = router.call_llm(request)
-        assert len(response.validated_by) >= 2
-
-    def test_invalid_provider_raises_error(self):
-        kg = TravelKnowledgeGraph()
-        router = LLMSubFunctionRouter(kg)
-        request = LLMRequest(provider="invalid_provider", prompt="Test")
+class TestLLMRouter:
+    def setup_method(self):
+        self.graph = TravelKnowledgeGraph()
+        self.router = LLMRouter(self.graph)
+    
+    def test_router_has_all_providers(self):
+        assert len(self.router.providers) == 6
+        assert "Ollama-Local" in self.router.providers
+        assert "Gemini" in self.router.providers
+        assert "OpenAI" in self.router.providers
+        assert "Grok" in self.router.providers
+        assert "Mistral" in self.router.providers
+        assert "DeepSeek" in self.router.providers
+    
+    def test_query_ollama_local(self):
+        response = self.router.query_provider("Ollama-Local", "Find hotels in Berlin")
+        assert response.provider == "Ollama-Local"
+        assert response.content.startswith("[Ollama-Local")
+        assert len(response.hmac_signature) == 64  # SHA256 hex
+    
+    def test_query_gemini(self):
+        response = self.router.query_provider("Gemini", "Plan 7-day itinerary")
+        assert response.provider == "Gemini"
+        assert "itinerary" in response.content.lower()
+    
+    def test_query_mistral_eu_dsgvo(self):
+        response = self.router.query_provider("Mistral", "Personenbezogene Daten prüfen")
+        assert "EU-DSGVO" in response.content or "privacy" in response.content.lower()
+    
+    def test_query_invalid_provider(self):
         try:
-            router.call_llm(request)
+            self.router.query_provider("InvalidAI", "test")
             assert False, "Should have raised ValueError"
         except ValueError as e:
-            assert "Invalid provider" in str(e)
-
-    def test_each_provider_returns_unique_content(self):
-        kg = TravelKnowledgeGraph()
-        router = LLMSubFunctionRouter(kg)
-        contents = set()
-        for provider in VALID_PROVIDERS:
-            request = LLMRequest(provider=provider, prompt="Test prompt")
-            response = router.call_llm(request)
-            contents.add(response.content)
-        assert len(contents) == len(VALID_PROVIDERS), "All providers should return different content"
-
-    def test_cross_validate_all_valid(self):
-        kg = TravelKnowledgeGraph()
-        router = LLMSubFunctionRouter(kg)
-        responses = []
-        for provider in VALID_PROVIDERS[:3]:
-            request = LLMRequest(provider=provider, prompt="Test")
-            responses.append(router.call_llm(request))
-        validation = router.cross_validate(responses)
-        assert all(validation.values())
-
-    def test_ollama_provider_works_independently(self):
-        kg = TravelKnowledgeGraph()
-        router = LLMSubFunctionRouter(kg)
-        request = LLMRequest(provider="ollama_local", prompt="Offline test")
-        response = router.call_llm(request)
-        assert "Ollama-Local" in response.content
+            assert "Unknown provider" in str(e)
+    
+    def test_cross_validation_two_providers(self):
+        responses, valid = self.router.cross_validate("Find cheap flights", {}, min_providers=2)
+        assert len(responses) == 2
+        assert valid == True
+        assert all(r.hmac_signature for r in responses)
+    
+    def test_hmac_signature_unique(self):
+        r1 = self.router.query_provider("OpenAI", "Same query", {})
+        r2 = self.router.query_provider("DeepSeek", "Same query", {})
+        assert r1.hmac_signature != r2.hmac_signature  # Different providers -> different content
+    
+    def test_call_history(self):
+        initial_count = len(self.router._call_history)
+        self.router.query_provider("Grok", "test")
+        assert len(self.router._call_history) == initial_count + 1
 
 
-class TestDomainOrchestrator:
-    """Test the 5-phase orchestration."""
-
-    def test_orchestrator_initialization(self):
-        orch = DomainOrchestrator()
-        assert isinstance(orch.knowledge_graph, TravelKnowledgeGraph)
-        assert isinstance(orch.llm_router, LLMSubFunctionRouter)
-        assert len(orch.adapters) == 4
-        assert orch.audit_log == []
-
-    def test_phase_discover_returns_all_adapters(self):
-        orch = DomainOrchestrator()
-        result = orch.phase_discover()
-        assert result["phase"] == "discover"
-        assert set(result["results"].keys()) == {"mews", "booking", "ideas", "generic"}
-        for name, data in result["results"].items():
-            assert "endpoints" in data
-            assert "status" in data
-
-    def test_phase_enrich_returns_context(self):
-        orch = DomainOrchestrator()
-        result = orch.phase_enrich("user_001")
-        assert result["phase"] == "enrich"
-        assert result["context_length"] > 0
-        assert result["user_id"] == "user_001"
-
-    def test_phase_route_llm_returns_all_providers(self):
-        orch = DomainOrchestrator()
-        responses = orch.phase_route_llm("Find me a hotel in Barcelona")
-        assert len(responses) == len(VALID_PROVIDERS)
-        assert all(isinstance(r, LLMResponse) for r in responses)
-
-    def test_phase_route_llm_logs_audit(self):
-        orch = DomainOrchestrator()
-        orch.phase_route_llm("Test prompt")
-        log_entries = [e for e in orch.audit_log if e["action"] == "llm_call"]
-        assert len(log_entries) == len(VALID_PROVIDERS)
-
-    def test_phase_cross_validate_all_pass(self):
-        orch = DomainOrchestrator()
-        responses = orch.phase_route_llm("Test validation")
-        result = orch.phase_cross_validate(responses)
-        assert result["phase"] == "cross_validate"
-        assert result["all_passed"] is True
-        assert len(result["validation"]) == len(VALID_PROVIDERS)
-
-    def test_phase_aggregate_consolidates_responses(self):
-        orch = DomainOrchestrator()
-        responses = orch.phase_route_llm("Book a trip")
-        result = orch.phase_aggregate(responses)
-        assert result["phase"] == "aggregate"
-        assert result["result"]["providers_used"] == VALID_PROVIDERS
-        assert result["result"]["signed_count"] == len(VALID_PROVIDERS)
-        assert result["result"]["sandbox_mode"] is True
-
-    def test_run_full_cycle_completes_all_phases(self):
-        orch = DomainOrchestrator()
-        result = orch.run_full_cycle("I want to travel from Berlin to Barcelona", "user_001")
+class TestTravelDomainOrchestrator:
+    def setup_method(self):
+        self.orch = create_heylou_orchestrator()
+    
+    def test_creation(self):
+        assert isinstance(self.orch.graph, TravelKnowledgeGraph)
+        assert len(self.orch.adapters) == 4
+        assert isinstance(self.orch.llm_router, LLMRouter)
+    
+    def test_phase1_knowledge_loading(self):
+        result = self.orch.phase1_knowledge_loading()
+        assert result["phase"] == "knowledge_loading"
+        assert result["hotels_loaded"] == 5
+        assert result["routes_loaded"] == 5
+    
+    def test_phase2_adapter_connect(self):
+        result = self.orch.phase2_adapter_connect()
+        assert result["phase"] == "adapter_connect"
+        assert result["all_connected"] == True
+    
+    def test_phase3_llm_subfunction(self):
+        result = self.orch.phase3_llm_subfunction("Finde beste Hotels in Zürich")
+        assert isinstance(result, LLMResponse)
+        assert result.provider == "Ollama-Local"
+    
+    def test_phase4_cross_validation(self):
+        responses, valid = self.orch.phase4_cross_validation("Reise nach Barcelona")
+        assert len(responses) >= 2
+        assert valid == True
+    
+    def test_phase5_booking_workflow_mews(self):
+        result = self.orch.phase5_booking_workflow("MEWS", "H-001", {
+            "check_in": "2026-08-01",
+            "check_out": "2026-08-05",
+            "guest_name": "Test",
+            "total_amount": 1000.0
+        })
+        assert result["phase"] == "booking_workflow"
+        assert result["adapter"] == "MEWS"
+        assert result["booking"]["status"] == "confirmed"
+    
+    def test_phase5_unknown_adapter(self):
+        result = self.orch.phase5_booking_workflow("UNKNOWN", "H-001", {})
+        assert "error" in result
+    
+    def test_full_cycle(self):
+        result = self.orch.run_full_cycle("Urlaub in Barcelona für 1 Woche")
         assert "phases" in result
-        assert "llm_responses" in result
-        assert len(result["phases"]) == 4  # discover, enrich, cross_validate, aggregate
-        assert len(result["llm_responses"]) == len(VALID_PROVIDERS)
-        # Verify all phases present
-        phases = [p["phase"] for p in result["phases"]]
-        assert "discover" in phases
-        assert "enrich" in phases
-        assert "cross_validate" in phases
-        assert "aggregate" in phases
-
-    def test_audit_log_grows_with_operations(self):
-        orch = DomainOrchestrator()
-        initial_count = len(orch.audit_log)
-        orch.run_full_cycle("Test")
-        assert len(orch.audit_log) > initial_count
-
-    def test_audit_log_entries_are_hmac_signed(self):
-        orch = DomainOrchestrator()
-        orch.phase_route_llm("Sign test")
-        for entry in orch.audit_log:
-            expected_hmac = hmac.new(
-                HMAC_SECRET,
-                json.dumps(entry["data"], sort_keys=True).encode(),
-                hashlib.sha256
-            ).hexdigest()
-            assert entry["hmac"] == expected_hmac
+        assert "summary" in result
+        assert "knowledge_loading" in result["phases"]
+        assert "adapter_connect" in result["phases"]
+        assert "llm_subfunction" in result["phases"]
+        assert "cross_validation" in result["phases"]
+        assert "booking_workflow" in result["phases"]
+        assert result["phases"]["cross_validation"]["valid"] == True
+    
+    def test_full_cycle_unknown_user(self):
+        result = self.orch.run_full_cycle("test", user_id="UNKNOWN")
+        assert "error" in result["phases"]["booking_workflow"]
 
 
-class TestIntegration:
-    """End-to-end integration tests."""
+class TestQuickSearch:
+    def test_quick_search_returns_list(self):
+        results = quick_search("Berlin")
+        assert isinstance(results, list)
+        assert len(results) > 0
+    
+    def test_quick_search_filters(self):
+        results = quick_search("Berlin", min_stars=4)
+        assert all(r["stars"] >= 4 for r in results)
+    
+    def test_quick_search_empty(self):
+        results = quick_search("Mordor")
+        assert len(results) == 0
 
-    def test_knowledge_graph_to_llm_pipeline(self):
-        """Test that knowledge graph feeds properly into LLM context."""
-        kg = TravelKnowledgeGraph()
-        router = LLMSubFunctionRouter(kg)
-        
-        # Simulate a real user request
-        request = LLMRequest(
-            provider="openai",
-            prompt="Find hotels in Barcelona under 150 EUR per night",
-            user_id="user_001",
+
+class TestCrossValidation:
+    def test_cross_validate_returns_dict(self):
+        result = cross_validate_travel_recommendation("Beste Reiseziele im August")
+        assert "query" in result
+        assert "validated" in result
+        assert "responses" in result
+        assert len(result["responses"]) >= 2
+
+
+class TestHealthCheck:
+    def test_health_check_returns_status(self):
+        status = health_check()
+        assert status["status"] == "operational"
+        assert status["system"] == "DF-HeyLou-Travel-Domain"
+        assert "modules" in status
+        assert "health_check" in status
+        assert status["health_check"]["all_adapters_connected"] == True
+
+
+class TestEdgeCases:
+    def test_preference_limits_applied(self):
+        graph = TravelKnowledgeGraph()
+        pref = graph.get_preference("U-002")
+        assert pref is not None
+        hotels = graph.search_hotels(min_stars=pref.min_stars, max_budget=pref.max_budget)
+        assert all(h.base_rate <= 100.0 for h in hotels)  # U-002 has max_budget 100
+    
+    def test_adapter_disconnect(self):
+        adapter = MEWSAdapter()
+        adapter.connect()
+        assert adapter.disconnect() == True
+    
+    def test_llm_response_dataclass(self):
+        response = LLMResponse(
+            provider="TestAI",
+            content="Hello World",
+            travel_context={"key": "value"},
+            hmac_signature="abcd" * 16
         )
-        response = router.call_llm(request)
-        
-        # Should have been enriched with context
-        assert response.sandbox is True
-        assert response.hmac_signature
-        assert "openai" in response.provider
+        assert response.provider == "TestAI"
+        assert response.timestamp > 0
+    
+    def test_real_llm_mode_env(self):
+        # In test environment, should be False
+        assert DF_HEYLOU_REAL_LLM_ENABLED == False
+    
+    def test_skeleton_key_pattern(self):
+        # GenericAPIAdapter is the Skeleton-Key
+        adapter = GenericAPIAdapter()
+        endpoints = adapter.discover_endpoints()
+        assert len(endpoints) == 4
+        # Test that it dynamically resolves endpoints
+        search_result = adapter.search({"destination": "Paris"})
+        assert search_result["endpoint_used"].endswith("search")
 
-    def test_skeleton_key_adapter_to_orchestrator(self):
-        """Test that adapter pattern integrates with orchestrator."""
-        orch = DomainOrchestrator()
-        
-        # Phase 1: Discover
-        discover = orch.phase_discover()
-        assert discover["results"]["mews"]["status"] == "MOCK"
-        
-        # Phase 2-5: Full cycle
-        result = orch.run_full_cycle("Check availability")
-        assert result["phases"][-1]["phase"] == "aggregate"
 
-    def test_all_providers_called_with_same_prompt(self):
-        """Test that the same prompt is sent to all providers with consistent context."""
-        orch = DomainOrchestrator()
-        prompt = "What is the cheapest way to get from Berlin to Innsbruck?"
-        responses = orch.phase_route_llm(prompt, "user_001")
-        
-        # All responses should be unique per provider
-        contents = [(r.provider, r.content) for r in responses]
-        assert len(contents) == len(set(c[1] for c in contents))
-
-    def test_cross_validation_detects_tampered_signature(self):
-        """Test that cross-validation would detect invalid signatures (simulated)."""
-        kg = TravelKnowledgeGraph()
-        router = LLMSubFunctionRouter(kg)
-        
-        # Create response with tampered signature
-        request = LLMRequest(provider="ollama_local", prompt="Test")
-        valid_response = router.call_llm(request)
-        tampered = LLMResponse(
-            provider=valid_response.provider,
-            content=valid_response.content,
-            hmac_signature="0" * 64,  # clearly wrong signature
-            validated_by=[],
-        )
-        
-        validation = router.cross_validate([tampered])
-        # In sandbox mode, signature length is checked but all 64-hex strings pass
-        assert validation[tampered.provider] is True  # Our tampered sig is still 64-hex chars
-
-    def test_orchestrator_handles_empty_prompt(self):
-        """Test that empty prompts are handled gracefully."""
-        orch = DomainOrchestrator()
-        responses = orch.phase_route_llm("")
-        assert len(responses) == len(VALID_PROVIDERS)
-        for r in responses:
-            assert r.hmac_signature
-
-    def test_orchestrator_handles_nonexistent_user(self):
-        """Test that non-existent user IDs don't crash the system."""
-        orch = DomainOrchestrator()
-        result = orch.run_full_cycle("Test prompt", "nonexistent_user_999")
-        assert "error" not in result
-
-    def test_provenance_chain_maintained(self):
-        """Test that HMAC chain is maintained through full cycle."""
-        orch = DomainOrchestrator()
-        result = orch.run_full_cycle("Provenance test")
-        
-        # All LLM responses should have valid HMACs
-        for resp_json in result["llm_responses"]:
-            assert len(resp_json["hmac_signature"]) == 64
-            
-        # Audit log should contain entries
-        assert len(orch.audit_log) > 0
-        for entry in orch.audit_log:
-            assert "hmac" in entry
-            assert entry["hmac"] == hmac.new(
-                HMAC_SECRET,
-                json.dumps(entry["data"], sort_keys=True).encode(),
-                hashlib.sha256
-            ).hexdigest()
+if __name__ == "__main__":
+    # Run all tests with verbose output
+    import pytest
+    pytest.main([__file__, "-v", "--tb=short"])
 
