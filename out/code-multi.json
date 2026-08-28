@@ -1,6 +1,6 @@
 {
   "df": "df-heylou-travel-domain",
-  "ts": "2026-08-27T01:25:42.275581+00:00",
+  "ts": "2026-08-28T01:04:56.121484+00:00",
   "crux": "[CRUX-MK]",
   "winner_provider": "incumbent-kept",
   "winner_tests_passed": true,
@@ -22,21 +22,21 @@
       "provider": "codex",
       "parse_ok": true,
       "tests_passed": true,
-      "n_tests": 2,
-      "n_assert": 10,
-      "coverage_pct": 91.0,
-      "q": 1471.0,
+      "n_tests": 3,
+      "n_assert": 12,
+      "coverage_pct": 96.0,
+      "q": 1501.0,
       "error": null
     },
     {
       "provider": "local",
       "parse_ok": true,
       "tests_passed": false,
-      "n_tests": 9,
-      "n_assert": 37,
+      "n_tests": 0,
+      "n_assert": 0,
       "coverage_pct": null,
-      "q": 1.0,
-      "error": null
+      "q": null,
+      "error": "test parse: unterminated triple-quoted string literal (detected at line 133) (<unknown>, lin"
     }
   ],
   "canonical_verify": {
