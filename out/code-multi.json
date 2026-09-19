@@ -1,6 +1,6 @@
 {
   "df": "df-heylou-travel-domain",
-  "ts": "2026-09-18T02:24:43.439740+00:00",
+  "ts": "2026-09-19T02:03:04.130940+00:00",
   "crux": "[CRUX-MK]",
   "winner_provider": "incumbent-kept",
   "gate_refused": null,
@@ -32,11 +32,11 @@
     {
       "provider": "local",
       "parse_ok": true,
-      "tests_passed": true,
-      "n_tests": 23,
-      "n_assert": 43,
-      "coverage_pct": 94.0,
-      "q": 1582.0,
+      "tests_passed": false,
+      "n_tests": 16,
+      "n_assert": 34,
+      "coverage_pct": null,
+      "q": 1.0,
       "error": null
     }
   ],
