@@ -1,6 +1,6 @@
 {
   "df": "df-heylou-travel-domain",
-  "ts": "2026-09-27T02:11:25.119099+00:00",
+  "ts": "2026-09-28T01:08:50.793559+00:00",
   "crux": "[CRUX-MK]",
   "winner_provider": "incumbent-kept",
   "gate_refused": null,
@@ -31,13 +31,13 @@
     },
     {
       "provider": "local",
-      "parse_ok": true,
+      "parse_ok": false,
       "tests_passed": false,
-      "n_tests": 6,
-      "n_assert": 10,
+      "n_tests": 0,
+      "n_assert": 0,
       "coverage_pct": null,
-      "q": 1.0,
-      "error": null
+      "q": null,
+      "error": "module parse: invalid syntax (<unknown>, line 1)"
     }
   ],
   "canonical_verify": {
