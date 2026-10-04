@@ -1,12 +1,12 @@
 {
   "df": "df-heylou-travel-domain",
-  "ts": "2026-10-03T02:18:10.208896+00:00",
+  "ts": "2026-10-04T02:19:01.976380+00:00",
   "crux": "[CRUX-MK]",
-  "winner_provider": null,
-  "gate_refused": "gate-g3-regression (Incumbent-Tests rot auf Variante, 2/2)",
+  "winner_provider": "incumbent-kept",
+  "gate_refused": null,
   "winner_tests_passed": true,
   "incumbent_q": 1694.0,
-  "winner_q": 1704.0,
+  "winner_q": 1694.0,
   "improved": false,
   "variants": [
     {
@@ -33,10 +33,10 @@
       "provider": "local",
       "parse_ok": true,
       "tests_passed": true,
-      "n_tests": 44,
-      "n_assert": 97,
-      "coverage_pct": 95.0,
-      "q": 1704.0,
+      "n_tests": 24,
+      "n_assert": 53,
+      "coverage_pct": 93.0,
+      "q": 1590.0,
       "error": null
     }
   ],
